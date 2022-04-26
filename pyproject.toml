@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=42"]
+build-backend = "setuptools.build_meta"
+
+[tool.black]
+skip-string-normalization = true
+target-version = ['py39']
+
+[tool.isort]
+profile = "black"
+
+[tool.pylint.messages_control]
+disable = [
+    'missing-class-docstring',
+    'missing-function-docstring',
+    'missing-module-docstring',
+    'redefined-outer-name',
+    'too-few-public-methods',
+    'unused-argument'
+]
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = """
+    --black
+    --isort
+    --pylint
+    --cov=src
+    --cov=tests
+    --cov-branch
+    --cov-report=term-missing
+    --cov-fail-under=100
+    --no-cov-on-fail
+"""
