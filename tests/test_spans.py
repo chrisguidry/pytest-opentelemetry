@@ -20,11 +20,17 @@ def test_simple_pytest_functions(testdir, span_recorder):
     assert key in spans
     assert spans[key].kind == SpanKind.INTERNAL
     assert spans[key].status.is_ok
+    assert spans[key].attributes['code.function'] == 'test_one'
+    assert spans[key].attributes['code.filepath'] == 'test_simple_pytest_functions.py'
+    assert spans[key].attributes['code.lineno'] == 0
 
     key = 'test_simple_pytest_functions.py::test_two'
     assert key in spans
     assert spans[key].kind == SpanKind.INTERNAL
     assert spans[key].status.is_ok
+    assert spans[key].attributes['code.function'] == 'test_two'
+    assert spans[key].attributes['code.filepath'] == 'test_simple_pytest_functions.py'
+    assert spans[key].attributes['code.lineno'] == 3
 
 
 def test_failures_and_errors(testdir, span_recorder):
@@ -55,11 +61,24 @@ def test_failures_and_errors(testdir, span_recorder):
     assert key in spans
     assert spans[key].kind == SpanKind.INTERNAL
     assert not spans[key].status.is_ok
+    assert spans[key].attributes['code.function'] == 'test_two'
+    assert spans[key].attributes['code.filepath'] == 'test_failures_and_errors.py'
+    assert spans[key].attributes['code.lineno'] == 3
+    assert 'exception.stacktrace' not in spans[key].attributes
+    assert len(spans[key].events) == 1
+    assert spans[key].events[0].attributes['exception.type'] == 'AssertionError'
 
     key = 'test_failures_and_errors.py::test_three'
     assert key in spans
     assert spans[key].kind == SpanKind.INTERNAL
     assert not spans[key].status.is_ok
+    assert spans[key].attributes['code.function'] == 'test_three'
+    assert spans[key].attributes['code.filepath'] == 'test_failures_and_errors.py'
+    assert spans[key].attributes['code.lineno'] == 6
+    assert 'exception.stacktrace' not in spans[key].attributes
+    assert len(spans[key].events) == 1
+    assert spans[key].events[0].attributes['exception.type'] == 'ValueError'
+    assert spans[key].events[0].attributes['exception.message'] == 'woops'
 
 
 def test_parametrized_tests(testdir, span_recorder):

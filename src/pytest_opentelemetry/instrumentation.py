@@ -10,6 +10,7 @@ from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.semconv.resource import ResourceAttributes
+from opentelemetry.semconv.trace import SpanAttributes
 from opentelemetry.trace import Status, StatusCode
 from psutil import Process
 
@@ -107,8 +108,25 @@ class OpenTelemetryPlugin:
     def pytest_runtest_logreport(self, report: TestReport):
         getattr(self, f'on_test_{report.when}')(report)
 
+    def pytest_exception_interact(self, node, call, report):
+        test_span = self.test_spans[node.nodeid]
+        test_span.record_exception(
+            exception=call.excinfo.value,
+            attributes={
+                SpanAttributes.EXCEPTION_STACKTRACE: str(report.longrepr),
+            },
+        )
+
     def on_test_setup(self, report: TestReport):
         test_span = self.tracer.start_span(report.nodeid)
+        filepath, line_number, domain = report.location
+        test_span.set_attributes(
+            {
+                SpanAttributes.CODE_FUNCTION: domain,
+                SpanAttributes.CODE_FILEPATH: filepath,
+                SpanAttributes.CODE_LINENO: line_number,
+            }
+        )
         self.test_spans[report.nodeid] = test_span
 
     def on_test_call(self, report: TestReport):
