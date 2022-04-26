@@ -11,6 +11,7 @@ profile = "black"
 
 [tool.pylint.messages_control]
 disable = [
+    'attribute-defined-outside-init',
     'fixme',
     'missing-class-docstring',
     'missing-function-docstring',

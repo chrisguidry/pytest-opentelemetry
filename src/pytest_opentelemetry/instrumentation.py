@@ -14,14 +14,10 @@ from opentelemetry.semconv.trace import SpanAttributes
 from opentelemetry.trace import Status, StatusCode
 from psutil import Process
 
+tracer = trace.get_tracer('pytest-opentelemetry')
+
 
 class OpenTelemetryPlugin:
-    def __init__(self):
-        self.provider = None
-        self.tracer = trace.get_tracer('pytest-opentelemetry')
-        self.test_spans = {}
-        self.phase_spans = {}
-
     @staticmethod
     def _initialize_trace_provider(resource: Resource, export: bool) -> TracerProvider:
         provider = trace.get_tracer_provider()
@@ -105,20 +101,24 @@ class OpenTelemetryPlugin:
 
         self.provider = self._initialize_trace_provider(resource, export)
 
+    def pytest_sessionstart(self, session):
+        self.provider = None
+        self.session_span = tracer.start_span('test session')
+        self.test_spans = {}
+        self.phase_spans = {}
+
+    def pytest_sessionfinish(self, session):
+        self.session_span.end()
+        self.session_span = None
+        self.test_spans = None
+        self.phase_spans = None
+
     def pytest_runtest_logreport(self, report: TestReport):
         getattr(self, f'on_test_{report.when}')(report)
 
-    def pytest_exception_interact(self, node, call, report):
-        test_span = self.test_spans[node.nodeid]
-        test_span.record_exception(
-            exception=call.excinfo.value,
-            attributes={
-                SpanAttributes.EXCEPTION_STACKTRACE: str(report.longrepr),
-            },
-        )
-
     def on_test_setup(self, report: TestReport):
-        test_span = self.tracer.start_span(report.nodeid)
+        context = trace.set_span_in_context(self.session_span)
+        test_span = tracer.start_span(report.nodeid, context=context)
         filepath, line_number, domain = report.location
         test_span.set_attributes(
             {
@@ -128,6 +128,15 @@ class OpenTelemetryPlugin:
             }
         )
         self.test_spans[report.nodeid] = test_span
+
+    def pytest_exception_interact(self, node, call, report):
+        test_span = self.test_spans[node.nodeid]
+        test_span.record_exception(
+            exception=call.excinfo.value,
+            attributes={
+                SpanAttributes.EXCEPTION_STACKTRACE: str(report.longrepr),
+            },
+        )
 
     def on_test_call(self, report: TestReport):
         test_span = self.test_spans[report.nodeid]

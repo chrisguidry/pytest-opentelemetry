@@ -14,7 +14,9 @@ def test_simple_pytest_functions(testdir, span_recorder):
     testdir.runpytest().assert_outcomes(passed=2)
 
     spans = {s.name: s for s in span_recorder.get_finished_spans()}
-    assert len(spans) == 2
+    assert len(spans) == 2 + 1
+
+    assert 'test session' in spans
 
     key = 'test_simple_pytest_functions.py::test_one'
     assert key in spans
@@ -50,7 +52,9 @@ def test_failures_and_errors(testdir, span_recorder):
     result.assert_outcomes(passed=1, failed=2)
 
     spans = {s.name: s for s in span_recorder.get_finished_spans()}
-    assert len(spans) == 3
+    assert len(spans) == 3 + 1
+
+    assert 'test session' in spans
 
     key = 'test_failures_and_errors.py::test_one'
     assert key in spans
@@ -97,7 +101,9 @@ def test_parametrized_tests(testdir, span_recorder):
     testdir.runpytest().assert_outcomes(passed=3)
 
     spans = {s.name: s for s in span_recorder.get_finished_spans()}
-    assert len(spans) == 3
+    assert len(spans) == 3 + 1
+
+    assert 'test session' in spans
 
     key = 'test_parametrized_tests.py::test_one[world]'
     assert key in spans
@@ -129,7 +135,9 @@ def test_class_tests(testdir, span_recorder):
     testdir.runpytest().assert_outcomes(passed=2)
 
     spans = {s.name: s for s in span_recorder.get_finished_spans()}
-    assert len(spans) == 2
+    assert len(spans) == 2 + 1
+
+    assert 'test session' in spans
 
     key = 'test_class_tests.py::TestThings::test_one'
     assert key in spans
