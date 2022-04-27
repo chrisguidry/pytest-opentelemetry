@@ -115,9 +115,9 @@ class OpenTelemetryPlugin:
         self.phase_spans = None
 
     def pytest_runtest_logreport(self, report: TestReport):
-        getattr(self, f'on_test_{report.when}')(report)
+        getattr(self, f'_on_test_{report.when}')(report)
 
-    def on_test_setup(self, report: TestReport):
+    def _on_test_setup(self, report: TestReport):
         context = trace.set_span_in_context(self.session_span)
         test_span = tracer.start_span(report.nodeid, context=context)
         filepath, line_number, domain = report.location
@@ -130,7 +130,14 @@ class OpenTelemetryPlugin:
         )
         self.test_spans[report.nodeid] = test_span
 
+    def pytest_runtest_call(self, item):
+        test_span = self.test_spans[item.nodeid]
+        self.current_span = trace.use_span(test_span)
+        self.current_span.__enter__()  # pylint: disable=no-member
+
     def pytest_exception_interact(self, node, call, report):
+        self.current_span.__exit__(None, None, None)  # pylint: disable=no-member
+        self.current_span = None
         test_span = self.test_spans[node.nodeid]
         test_span.record_exception(
             exception=call.excinfo.value,
@@ -139,13 +146,13 @@ class OpenTelemetryPlugin:
             },
         )
 
-    def on_test_call(self, report: TestReport):
+    def _on_test_call(self, report: TestReport):
         test_span = self.test_spans[report.nodeid]
         if report.outcome == 'failed':
             test_span.set_status(Status(StatusCode.ERROR))
         else:
             test_span.set_status(Status(StatusCode.OK))
 
-    def on_test_teardown(self, report: TestReport):
+    def _on_test_teardown(self, report: TestReport):
         test_span = self.test_spans.pop(report.nodeid)
         test_span.end()

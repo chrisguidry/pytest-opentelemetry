@@ -148,3 +148,50 @@ def test_class_tests(testdir, span_recorder):
     assert key in spans
     assert spans[key].kind == SpanKind.INTERNAL
     assert spans[key].status.is_ok
+
+
+def test_test_spans_are_children_of_sessions(testdir, span_recorder):
+    testdir.makepyfile(
+        """
+        def test_one():
+            assert 1 + 2 == 3
+    """
+    )
+    testdir.runpytest().assert_outcomes(passed=1)
+
+    spans = {s.name: s for s in span_recorder.get_finished_spans()}
+    assert len(spans) == 2
+
+    session = spans['test session']
+    test = spans['test_test_spans_are_children_of_sessions.py::test_one']
+
+    assert test.context.trace_id == session.context.trace_id
+    assert test.parent.span_id == session.context.span_id
+
+
+def test_spans_within_tests_are_children_of_test_spans(testdir, span_recorder):
+    testdir.makepyfile(
+        """
+        from opentelemetry import trace
+
+        tracer = trace.get_tracer('inside')
+
+        def test_one():
+            with tracer.start_as_current_span('inner'):
+                assert 1 + 2 == 3
+    """
+    )
+    testdir.runpytest().assert_outcomes(passed=1)
+
+    spans = {s.name: s for s in span_recorder.get_finished_spans()}
+    assert len(spans) == 3
+
+    session = spans['test session']
+    test = spans['test_spans_within_tests_are_children_of_test_spans.py::test_one']
+    inner = spans['inner']
+
+    assert test.context.trace_id == session.context.trace_id
+    assert test.parent.span_id == session.context.span_id
+
+    assert inner.context.trace_id == test.context.trace_id
+    assert inner.parent.span_id == test.context.span_id
