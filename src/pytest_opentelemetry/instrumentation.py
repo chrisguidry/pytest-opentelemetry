@@ -20,6 +20,9 @@ tracer = trace.get_tracer('pytest-opentelemetry')
 
 
 class OpenTelemetryPlugin:
+    """A pytest plugin which produces OpenTelemetry spans around test sessions and
+    individual test runs."""
+
     @staticmethod
     def _initialize_trace_provider(resource: Resource, export: bool) -> TracerProvider:
         provider = trace.get_tracer_provider()

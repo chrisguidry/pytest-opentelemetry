@@ -61,7 +61,7 @@ def get_codebase_version() -> str:
 
     try:
         version = subprocess.check_output(['git', 'rev-parse', 'HEAD'])
-    except Exception as e:  # pylint: disable=broad-except
-        return f'[unknown: {str(e)}]'
+    except Exception as exception:  # pylint: disable=broad-except
+        return f'[unknown: {str(exception)}]'
 
     return version.decode().strip()

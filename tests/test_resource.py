@@ -95,6 +95,8 @@ def git_repo_codebase(bare_codebase: str) -> str:
         readme.write('# hi!\n')
 
     os.system('git init')
+    os.system('git config user.email "testing@example.com"')
+    os.system('git config user.name "Testy McTesterson"')
     os.system('git add README.md')
     os.system('git commit --message="Saying hi!"')
 
