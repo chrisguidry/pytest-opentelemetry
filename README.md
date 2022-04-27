@@ -82,3 +82,26 @@ service:
       processors: [batch]
       exporters: [jaeger]
 ```
+
+## Developing
+
+Two references I keep returning to is the pytest guide on writing plugins, and the
+pytest API reference:
+
+* https://docs.pytest.org/en/6.2.x/writing_plugins.html
+* https://docs.pytest.org/en/6.2.x/reference.html#hooks
+
+These are extremely helpful in understanding the lifecycle of a pytest run.
+
+To get setup for development, you will likely want to use a "virtual environment", using
+great tools like `virtualenv` or `pyenv`.
+
+Once you have a virtual environment, install this package for editing, along with its
+development dependencies, with this command:
+
+```bash
+pip install -e '.[dev]'
+```
+
+When sending pull requests, don't forget to bump the version in
+[setup.cfg](./setup.cfg).
