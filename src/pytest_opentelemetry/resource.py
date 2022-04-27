@@ -1,13 +1,13 @@
 import os
 import subprocess
 import sys
-from typing import Dict, Optional
+from typing import Dict, Union
 
 from opentelemetry.semconv.resource import ResourceAttributes
 from psutil import Process
 
 
-def get_process_attributes() -> Dict:
+def get_process_attributes() -> Dict[str, Union[str, bool, int, float]]:
     # https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/resource/semantic_conventions/process.md#process
     process = Process()
     with process.oneshot():
@@ -24,7 +24,7 @@ def get_process_attributes() -> Dict:
         }
 
 
-def get_runtime_attributes() -> Dict:
+def get_runtime_attributes() -> Dict[str, Union[str, bool, int, float]]:
     # https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/resource/semantic_conventions/process.md#python-runtimes
     version = sys.implementation.version
     version_string = ".".join(
@@ -42,7 +42,7 @@ def get_runtime_attributes() -> Dict:
     }
 
 
-def get_codebase_attributes() -> Dict:
+def get_codebase_attributes() -> Dict[str, Union[str, bool, int, float]]:
     return {
         ResourceAttributes.SERVICE_NAME: get_codebase_name(),
         ResourceAttributes.SERVICE_VERSION: get_codebase_version(),
@@ -55,7 +55,7 @@ def get_codebase_name() -> str:
     return os.path.split(os.getcwd())[-1]
 
 
-def get_codebase_version() -> Optional[str]:
+def get_codebase_version() -> str:
     if not os.path.exists('.git'):
         return '[unknown: not a git repository]'
 
