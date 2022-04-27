@@ -58,12 +58,10 @@ def test_failures_and_errors(testdir, span_recorder):
 
     key = 'test_failures_and_errors.py::test_one'
     assert key in spans
-    assert spans[key].kind == SpanKind.INTERNAL
     assert spans[key].status.is_ok
 
     key = 'test_failures_and_errors.py::test_two'
     assert key in spans
-    assert spans[key].kind == SpanKind.INTERNAL
     assert not spans[key].status.is_ok
     assert spans[key].attributes['code.function'] == 'test_two'
     assert spans[key].attributes['code.filepath'] == 'test_failures_and_errors.py'
@@ -74,7 +72,6 @@ def test_failures_and_errors(testdir, span_recorder):
 
     key = 'test_failures_and_errors.py::test_three'
     assert key in spans
-    assert spans[key].kind == SpanKind.INTERNAL
     assert not spans[key].status.is_ok
     assert spans[key].attributes['code.function'] == 'test_three'
     assert spans[key].attributes['code.filepath'] == 'test_failures_and_errors.py'
@@ -83,6 +80,49 @@ def test_failures_and_errors(testdir, span_recorder):
     assert len(spans[key].events) == 1
     assert spans[key].events[0].attributes['exception.type'] == 'ValueError'
     assert spans[key].events[0].attributes['exception.message'] == 'woops'
+
+
+def test_failures_in_fixtures(testdir, span_recorder):
+    testdir.makepyfile(
+        """
+        import pytest
+
+        @pytest.fixture
+        def borked_fixture():
+            raise ValueError('newp')
+
+        def test_one():
+            assert 1 + 2 == 3
+
+        def test_two(borked_fixture):
+            assert 2 + 2 == 5
+
+        def test_three(borked_fixture):
+            assert 2 + 2 == 4
+
+        def test_four():
+            assert 2 + 2 == 5
+    """
+    )
+    result = testdir.runpytest()
+    result.assert_outcomes(passed=1, failed=1, errors=2)
+
+    spans = {s.name: s for s in span_recorder.get_finished_spans()}
+    assert len(spans) == 4 + 1
+
+    assert 'test session' in spans
+
+    key = 'test_failures_in_fixtures.py::test_one'
+    assert spans[key].status.is_ok
+
+    key = 'test_failures_in_fixtures.py::test_two'
+    assert not spans[key].status.is_ok
+
+    key = 'test_failures_in_fixtures.py::test_three'
+    assert not spans[key].status.is_ok
+
+    key = 'test_failures_in_fixtures.py::test_four'
+    assert not spans[key].status.is_ok
 
 
 def test_parametrized_tests(testdir, span_recorder):
@@ -107,17 +147,14 @@ def test_parametrized_tests(testdir, span_recorder):
 
     key = 'test_parametrized_tests.py::test_one[world]'
     assert key in spans
-    assert spans[key].kind == SpanKind.INTERNAL
     assert spans[key].status.is_ok
 
     key = 'test_parametrized_tests.py::test_one[people]'
     assert key in spans
-    assert spans[key].kind == SpanKind.INTERNAL
     assert spans[key].status.is_ok
 
     key = 'test_parametrized_tests.py::test_two'
     assert key in spans
-    assert spans[key].kind == SpanKind.INTERNAL
     assert spans[key].status.is_ok
 
 
@@ -141,12 +178,10 @@ def test_class_tests(testdir, span_recorder):
 
     key = 'test_class_tests.py::TestThings::test_one'
     assert key in spans
-    assert spans[key].kind == SpanKind.INTERNAL
     assert spans[key].status.is_ok
 
     key = 'test_class_tests.py::TestThings::test_two'
     assert key in spans
-    assert spans[key].kind == SpanKind.INTERNAL
     assert spans[key].status.is_ok
 
 
