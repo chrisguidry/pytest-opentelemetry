@@ -1,6 +1,12 @@
+from typing import Any, Generator
+
 import opentelemetry.sdk.trace as trace_sdk
 import pytest
+from _pytest.config import Config
+from _pytest.main import Session
+from _pytest.nodes import Item, Node
 from _pytest.reports import TestReport
+from _pytest.runner import CallInfo
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.resources import Resource
@@ -27,7 +33,7 @@ class OpenTelemetryPlugin:
 
         return provider
 
-    def pytest_configure(self, config):
+    def pytest_configure(self, config: Config) -> None:
         attributes = {
             **resource.get_process_attributes(),
             **resource.get_runtime_attributes(),
@@ -39,15 +45,14 @@ class OpenTelemetryPlugin:
             export=config.getoption('--export-traces'),
         )
 
-    def pytest_sessionstart(self, session):
+    def pytest_sessionstart(self, session: Session) -> None:
         self.session_span = tracer.start_span('test session')
 
-    def pytest_sessionfinish(self, session):
+    def pytest_sessionfinish(self, session: Session) -> None:
         self.session_span.end()
-        self.session_span = None
 
     @pytest.hookimpl(hookwrapper=True)
-    def pytest_runtest_protocol(self, item, nextitem):
+    def pytest_runtest_protocol(self, item: Item) -> Generator[None, None, None]:
         context = trace.set_span_in_context(self.session_span)
         with tracer.start_as_current_span(item.nodeid, context=context) as test_span:
             filepath, line_number, domain = item.location
@@ -62,10 +67,19 @@ class OpenTelemetryPlugin:
             yield
 
     @staticmethod
-    def pytest_exception_interact(node, call, report):
+    def pytest_exception_interact(
+        node: Node,
+        call: CallInfo[Any],
+        report: TestReport,
+    ) -> None:
+        excinfo = call.excinfo
+        assert excinfo
+        assert isinstance(excinfo.value, Exception)
+
         test_span = trace.get_current_span()
+
         test_span.record_exception(
-            exception=call.excinfo.value,
+            exception=excinfo.value,
             attributes={
                 SpanAttributes.EXCEPTION_STACKTRACE: str(report.longrepr),
             },
@@ -73,12 +87,12 @@ class OpenTelemetryPlugin:
         test_span.set_status(
             Status(
                 status_code=StatusCode.ERROR,
-                description=f"{call.excinfo.type}: {call.excinfo.value}",
+                description=f"{excinfo.type}: {excinfo.value}",
             )
         )
 
     @staticmethod
-    def pytest_runtest_logreport(report: TestReport):
+    def pytest_runtest_logreport(report: TestReport) -> None:
         if report.when != 'call':
             return
 

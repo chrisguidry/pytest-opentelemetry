@@ -6,6 +6,11 @@ build-backend = "setuptools.build_meta"
 skip-string-normalization = true
 target-version = ['py39']
 
+[tool.coverage.report]
+omit = [
+    "src/pytest_opentelemetry/plugin.py"
+]
+
 [tool.isort]
 profile = "black"
 
@@ -14,14 +19,14 @@ namespace_packages = true
 
 [tool.pylint.messages_control]
 disable = [
-    'attribute-defined-outside-init',
     'fixme',
-    'invalid-name',
+
     'missing-class-docstring',
     'missing-function-docstring',
     'missing-module-docstring',
+
+    # fundamental to how pytest fixtures work
     'redefined-outer-name',
-    'too-few-public-methods',
     'unused-argument'
 ]
 

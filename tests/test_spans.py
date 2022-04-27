@@ -1,8 +1,13 @@
+from _pytest.pytester import Pytester
 from opentelemetry.trace import SpanKind
 
+from . import SpanRecorder
 
-def test_simple_pytest_functions(testdir, span_recorder):
-    testdir.makepyfile(
+
+def test_simple_pytest_functions(
+    pytester: Pytester, span_recorder: SpanRecorder
+) -> None:
+    pytester.makepyfile(
         """
         def test_one():
             assert 1 + 2 == 3
@@ -11,32 +16,32 @@ def test_simple_pytest_functions(testdir, span_recorder):
             assert 2 + 2 == 4
     """
     )
-    testdir.runpytest().assert_outcomes(passed=2)
+    pytester.runpytest().assert_outcomes(passed=2)
 
-    spans = {s.name: s for s in span_recorder.get_finished_spans()}
+    spans = span_recorder.spans_by_name()
     assert len(spans) == 2 + 1
 
     assert 'test session' in spans
 
-    key = 'test_simple_pytest_functions.py::test_one'
-    assert key in spans
-    assert spans[key].kind == SpanKind.INTERNAL
-    assert spans[key].status.is_ok
-    assert spans[key].attributes['code.function'] == 'test_one'
-    assert spans[key].attributes['code.filepath'] == 'test_simple_pytest_functions.py'
-    assert spans[key].attributes['code.lineno'] == '0'
+    span = spans['test_simple_pytest_functions.py::test_one']
+    assert span.kind == SpanKind.INTERNAL
+    assert span.status.is_ok
+    assert span.attributes
+    assert span.attributes['code.function'] == 'test_one'
+    assert span.attributes['code.filepath'] == 'test_simple_pytest_functions.py'
+    assert span.attributes['code.lineno'] == '0'
 
-    key = 'test_simple_pytest_functions.py::test_two'
-    assert key in spans
-    assert spans[key].kind == SpanKind.INTERNAL
-    assert spans[key].status.is_ok
-    assert spans[key].attributes['code.function'] == 'test_two'
-    assert spans[key].attributes['code.filepath'] == 'test_simple_pytest_functions.py'
-    assert spans[key].attributes['code.lineno'] == '3'
+    span = spans['test_simple_pytest_functions.py::test_two']
+    assert span.kind == SpanKind.INTERNAL
+    assert span.status.is_ok
+    assert span.attributes
+    assert span.attributes['code.function'] == 'test_two'
+    assert span.attributes['code.filepath'] == 'test_simple_pytest_functions.py'
+    assert span.attributes['code.lineno'] == '3'
 
 
-def test_failures_and_errors(testdir, span_recorder):
-    testdir.makepyfile(
+def test_failures_and_errors(pytester: Pytester, span_recorder: SpanRecorder) -> None:
+    pytester.makepyfile(
         """
         def test_one():
             assert 1 + 2 == 3
@@ -48,42 +53,45 @@ def test_failures_and_errors(testdir, span_recorder):
             raise ValueError('woops')
     """
     )
-    result = testdir.runpytest()
+    result = pytester.runpytest()
     result.assert_outcomes(passed=1, failed=2)
 
-    spans = {s.name: s for s in span_recorder.get_finished_spans()}
+    spans = span_recorder.spans_by_name()
     assert len(spans) == 3 + 1
 
     assert 'test session' in spans
 
-    key = 'test_failures_and_errors.py::test_one'
-    assert key in spans
-    assert spans[key].status.is_ok
+    span = spans['test_failures_and_errors.py::test_one']
+    assert span.status.is_ok
 
-    key = 'test_failures_and_errors.py::test_two'
-    assert key in spans
-    assert not spans[key].status.is_ok
-    assert spans[key].attributes['code.function'] == 'test_two'
-    assert spans[key].attributes['code.filepath'] == 'test_failures_and_errors.py'
-    assert spans[key].attributes['code.lineno'] == '3'
-    assert 'exception.stacktrace' not in spans[key].attributes
-    assert len(spans[key].events) == 1
-    assert spans[key].events[0].attributes['exception.type'] == 'AssertionError'
+    span = spans['test_failures_and_errors.py::test_two']
+    assert not span.status.is_ok
+    assert span.attributes
+    assert span.attributes['code.function'] == 'test_two'
+    assert span.attributes['code.filepath'] == 'test_failures_and_errors.py'
+    assert span.attributes['code.lineno'] == '3'
+    assert 'exception.stacktrace' not in span.attributes
+    assert len(span.events) == 1
+    event = span.events[0]
+    assert event.attributes
+    assert event.attributes['exception.type'] == 'AssertionError'
 
-    key = 'test_failures_and_errors.py::test_three'
-    assert key in spans
-    assert not spans[key].status.is_ok
-    assert spans[key].attributes['code.function'] == 'test_three'
-    assert spans[key].attributes['code.filepath'] == 'test_failures_and_errors.py'
-    assert spans[key].attributes['code.lineno'] == '6'
-    assert 'exception.stacktrace' not in spans[key].attributes
-    assert len(spans[key].events) == 1
-    assert spans[key].events[0].attributes['exception.type'] == 'ValueError'
-    assert spans[key].events[0].attributes['exception.message'] == 'woops'
+    span = spans['test_failures_and_errors.py::test_three']
+    assert not span.status.is_ok
+    assert span.attributes
+    assert span.attributes['code.function'] == 'test_three'
+    assert span.attributes['code.filepath'] == 'test_failures_and_errors.py'
+    assert span.attributes['code.lineno'] == '6'
+    assert 'exception.stacktrace' not in span.attributes
+    assert len(span.events) == 1
+    event = span.events[0]
+    assert event.attributes
+    assert event.attributes['exception.type'] == 'ValueError'
+    assert event.attributes['exception.message'] == 'woops'
 
 
-def test_failures_in_fixtures(testdir, span_recorder):
-    testdir.makepyfile(
+def test_failures_in_fixtures(pytester: Pytester, span_recorder: SpanRecorder) -> None:
+    pytester.makepyfile(
         """
         import pytest
 
@@ -104,29 +112,29 @@ def test_failures_in_fixtures(testdir, span_recorder):
             assert 2 + 2 == 5
     """
     )
-    result = testdir.runpytest()
+    result = pytester.runpytest()
     result.assert_outcomes(passed=1, failed=1, errors=2)
 
-    spans = {s.name: s for s in span_recorder.get_finished_spans()}
+    spans = span_recorder.spans_by_name()
     assert len(spans) == 4 + 1
 
     assert 'test session' in spans
 
-    key = 'test_failures_in_fixtures.py::test_one'
-    assert spans[key].status.is_ok
+    span = spans['test_failures_in_fixtures.py::test_one']
+    assert span.status.is_ok
 
-    key = 'test_failures_in_fixtures.py::test_two'
-    assert not spans[key].status.is_ok
+    span = spans['test_failures_in_fixtures.py::test_two']
+    assert not span.status.is_ok
 
-    key = 'test_failures_in_fixtures.py::test_three'
-    assert not spans[key].status.is_ok
+    span = spans['test_failures_in_fixtures.py::test_three']
+    assert not span.status.is_ok
 
-    key = 'test_failures_in_fixtures.py::test_four'
-    assert not spans[key].status.is_ok
+    span = spans['test_failures_in_fixtures.py::test_four']
+    assert not span.status.is_ok
 
 
-def test_parametrized_tests(testdir, span_recorder):
-    testdir.makepyfile(
+def test_parametrized_tests(pytester: Pytester, span_recorder: SpanRecorder) -> None:
+    pytester.makepyfile(
         """
         import pytest
 
@@ -138,28 +146,25 @@ def test_parametrized_tests(testdir, span_recorder):
             assert 2 + 2 == 4
     """
     )
-    testdir.runpytest().assert_outcomes(passed=3)
+    pytester.runpytest().assert_outcomes(passed=3)
 
-    spans = {s.name: s for s in span_recorder.get_finished_spans()}
+    spans = span_recorder.spans_by_name()
     assert len(spans) == 3 + 1
 
     assert 'test session' in spans
 
-    key = 'test_parametrized_tests.py::test_one[world]'
-    assert key in spans
-    assert spans[key].status.is_ok
+    span = spans['test_parametrized_tests.py::test_one[world]']
+    assert span.status.is_ok
 
-    key = 'test_parametrized_tests.py::test_one[people]'
-    assert key in spans
-    assert spans[key].status.is_ok
+    span = spans['test_parametrized_tests.py::test_one[people]']
+    assert span.status.is_ok
 
-    key = 'test_parametrized_tests.py::test_two'
-    assert key in spans
-    assert spans[key].status.is_ok
+    span = spans['test_parametrized_tests.py::test_two']
+    assert span.status.is_ok
 
 
-def test_class_tests(testdir, span_recorder):
-    testdir.makepyfile(
+def test_class_tests(pytester: Pytester, span_recorder: SpanRecorder) -> None:
+    pytester.makepyfile(
         """
         class TestThings:
             def test_one(self):
@@ -169,43 +174,48 @@ def test_class_tests(testdir, span_recorder):
                 assert 2 + 2 == 4
     """
     )
-    testdir.runpytest().assert_outcomes(passed=2)
+    pytester.runpytest().assert_outcomes(passed=2)
 
-    spans = {s.name: s for s in span_recorder.get_finished_spans()}
+    spans = span_recorder.spans_by_name()
     assert len(spans) == 2 + 1
 
     assert 'test session' in spans
 
-    key = 'test_class_tests.py::TestThings::test_one'
-    assert key in spans
-    assert spans[key].status.is_ok
+    span = spans['test_class_tests.py::TestThings::test_one']
+    assert span.status.is_ok
 
-    key = 'test_class_tests.py::TestThings::test_two'
-    assert key in spans
-    assert spans[key].status.is_ok
+    span = spans['test_class_tests.py::TestThings::test_two']
+    assert span.status.is_ok
 
 
-def test_test_spans_are_children_of_sessions(testdir, span_recorder):
-    testdir.makepyfile(
+def test_test_spans_are_children_of_sessions(
+    pytester: Pytester, span_recorder: SpanRecorder
+) -> None:
+    pytester.makepyfile(
         """
         def test_one():
             assert 1 + 2 == 3
     """
     )
-    testdir.runpytest().assert_outcomes(passed=1)
+    pytester.runpytest().assert_outcomes(passed=1)
 
-    spans = {s.name: s for s in span_recorder.get_finished_spans()}
+    spans = span_recorder.spans_by_name()
     assert len(spans) == 2
 
     session = spans['test session']
     test = spans['test_test_spans_are_children_of_sessions.py::test_one']
 
+    assert session.context.trace_id
     assert test.context.trace_id == session.context.trace_id
+
+    assert test.parent
     assert test.parent.span_id == session.context.span_id
 
 
-def test_spans_within_tests_are_children_of_test_spans(testdir, span_recorder):
-    testdir.makepyfile(
+def test_spans_within_tests_are_children_of_test_spans(
+    pytester: Pytester, span_recorder: SpanRecorder
+) -> None:
+    pytester.makepyfile(
         """
         from opentelemetry import trace
 
@@ -216,17 +226,21 @@ def test_spans_within_tests_are_children_of_test_spans(testdir, span_recorder):
                 assert 1 + 2 == 3
     """
     )
-    testdir.runpytest().assert_outcomes(passed=1)
+    pytester.runpytest().assert_outcomes(passed=1)
 
-    spans = {s.name: s for s in span_recorder.get_finished_spans()}
+    spans = span_recorder.spans_by_name()
     assert len(spans) == 3
 
     session = spans['test session']
     test = spans['test_spans_within_tests_are_children_of_test_spans.py::test_one']
     inner = spans['inner']
 
+    assert session.context.trace_id
     assert test.context.trace_id == session.context.trace_id
+    assert inner.context.trace_id == test.context.trace_id
+
+    assert test.parent
     assert test.parent.span_id == session.context.span_id
 
-    assert inner.context.trace_id == test.context.trace_id
+    assert inner.parent
     assert inner.parent.span_id == test.context.span_id
