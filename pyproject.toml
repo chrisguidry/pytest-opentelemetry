@@ -16,6 +16,7 @@ namespace_packages = true
 disable = [
     'attribute-defined-outside-init',
     'fixme',
+    'invalid-name',
     'missing-class-docstring',
     'missing-function-docstring',
     'missing-module-docstring',
