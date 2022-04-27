@@ -1,17 +1,17 @@
 import os
 import subprocess
 import sys
-from typing import Dict
+from typing import Dict, Optional
 
+import opentelemetry.sdk.trace as trace_sdk
 from _pytest.reports import TestReport
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.semconv.resource import ResourceAttributes
 from opentelemetry.semconv.trace import SpanAttributes
-from opentelemetry.trace import Status, StatusCode
+from opentelemetry.trace import Status, StatusCode, TracerProvider
 from psutil import Process
 
 tracer = trace.get_tracer('pytest-opentelemetry')
@@ -21,8 +21,9 @@ class OpenTelemetryPlugin:
     @staticmethod
     def _initialize_trace_provider(resource: Resource, export: bool) -> TracerProvider:
         provider = trace.get_tracer_provider()
-        if not hasattr(provider, "add_span_processor"):  # pragma: no cover
-            provider = TracerProvider(resource=resource)
+
+        if not isinstance(provider, trace_sdk.TracerProvider):  # pragma: no cover
+            provider = trace_sdk.TracerProvider(resource=resource)
             trace.set_tracer_provider(provider)
 
         if export:  # pragma: no cover
@@ -51,7 +52,7 @@ class OpenTelemetryPlugin:
     def _get_runtime_attributes() -> Dict:
         # https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/resource/semantic_conventions/process.md#python-runtimes
         version = sys.implementation.version
-        version = ".".join(
+        version_string = ".".join(
             map(
                 str,
                 version[:3]
@@ -61,24 +62,24 @@ class OpenTelemetryPlugin:
         )
         return {
             ResourceAttributes.PROCESS_RUNTIME_NAME: sys.implementation.name,
-            ResourceAttributes.PROCESS_RUNTIME_VERSION: version,
+            ResourceAttributes.PROCESS_RUNTIME_VERSION: version_string,
             ResourceAttributes.PROCESS_RUNTIME_DESCRIPTION: sys.version,
         }
 
     @classmethod
-    def _get_codebase_attributes(cls):
+    def _get_codebase_attributes(cls) -> Dict:
         return {
             ResourceAttributes.SERVICE_NAME: cls._get_codebase_name(),
             ResourceAttributes.SERVICE_VERSION: cls._get_codebase_version(),
         }
 
     @staticmethod
-    def _get_codebase_name():
+    def _get_codebase_name() -> str:
         # TODO: any better ways to get this?
         return os.path.split(os.getcwd())[-1]
 
     @staticmethod
-    def _get_codebase_version():
+    def _get_codebase_version() -> Optional[str]:
         if not os.path.exists('.git'):
             return None
 
@@ -124,7 +125,7 @@ class OpenTelemetryPlugin:
             {
                 SpanAttributes.CODE_FUNCTION: domain,
                 SpanAttributes.CODE_FILEPATH: filepath,
-                SpanAttributes.CODE_LINENO: line_number,
+                SpanAttributes.CODE_LINENO: str(line_number),
             }
         )
         self.test_spans[report.nodeid] = test_span

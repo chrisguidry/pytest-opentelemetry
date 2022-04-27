@@ -9,6 +9,9 @@ target-version = ['py39']
 [tool.isort]
 profile = "black"
 
+[tool.mypy]
+namespace_packages = true
+
 [tool.pylint.messages_control]
 disable = [
     'attribute-defined-outside-init',
@@ -27,6 +30,7 @@ addopts = """
     --black
     --isort
     --pylint
+    --mypy
     --cov=src
     --cov=tests
     --cov-branch
