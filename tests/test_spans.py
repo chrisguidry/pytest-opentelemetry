@@ -21,7 +21,7 @@ def test_simple_pytest_functions(
     spans = span_recorder.spans_by_name()
     assert len(spans) == 2 + 1
 
-    assert 'test session' in spans
+    assert 'test run' in spans
 
     span = spans['test_simple_pytest_functions.py::test_one']
     assert span.kind == SpanKind.INTERNAL
@@ -59,7 +59,7 @@ def test_failures_and_errors(pytester: Pytester, span_recorder: SpanRecorder) ->
     spans = span_recorder.spans_by_name()
     assert len(spans) == 3 + 1
 
-    assert 'test session' in spans
+    assert 'test run' in spans
 
     span = spans['test_failures_and_errors.py::test_one']
     assert span.status.is_ok
@@ -118,7 +118,7 @@ def test_failures_in_fixtures(pytester: Pytester, span_recorder: SpanRecorder) -
     spans = span_recorder.spans_by_name()
     assert len(spans) == 4 + 1
 
-    assert 'test session' in spans
+    assert 'test run' in spans
 
     span = spans['test_failures_in_fixtures.py::test_one']
     assert span.status.is_ok
@@ -151,7 +151,7 @@ def test_parametrized_tests(pytester: Pytester, span_recorder: SpanRecorder) -> 
     spans = span_recorder.spans_by_name()
     assert len(spans) == 3 + 1
 
-    assert 'test session' in spans
+    assert 'test run' in spans
 
     span = spans['test_parametrized_tests.py::test_one[world]']
     assert span.status.is_ok
@@ -179,7 +179,7 @@ def test_class_tests(pytester: Pytester, span_recorder: SpanRecorder) -> None:
     spans = span_recorder.spans_by_name()
     assert len(spans) == 2 + 1
 
-    assert 'test session' in spans
+    assert 'test run' in spans
 
     span = spans['test_class_tests.py::TestThings::test_one']
     assert span.status.is_ok
@@ -202,14 +202,14 @@ def test_test_spans_are_children_of_sessions(
     spans = span_recorder.spans_by_name()
     assert len(spans) == 2
 
-    session = spans['test session']
+    test_run = spans['test run']
     test = spans['test_test_spans_are_children_of_sessions.py::test_one']
 
-    assert session.context.trace_id
-    assert test.context.trace_id == session.context.trace_id
+    assert test_run.context.trace_id
+    assert test.context.trace_id == test_run.context.trace_id
 
     assert test.parent
-    assert test.parent.span_id == session.context.span_id
+    assert test.parent.span_id == test_run.context.span_id
 
 
 def test_spans_within_tests_are_children_of_test_spans(
@@ -231,16 +231,16 @@ def test_spans_within_tests_are_children_of_test_spans(
     spans = span_recorder.spans_by_name()
     assert len(spans) == 3
 
-    session = spans['test session']
+    test_run = spans['test run']
     test = spans['test_spans_within_tests_are_children_of_test_spans.py::test_one']
     inner = spans['inner']
 
-    assert session.context.trace_id
-    assert test.context.trace_id == session.context.trace_id
+    assert test_run.context.trace_id
+    assert test.context.trace_id == test_run.context.trace_id
     assert inner.context.trace_id == test.context.trace_id
 
     assert test.parent
-    assert test.parent.span_id == session.context.span_id
+    assert test.parent.span_id == test_run.context.span_id
 
     assert inner.parent
     assert inner.parent.span_id == test.context.span_id

@@ -33,6 +33,16 @@ pytest --export-traces
 
 Only the OTLP over gRPC exporter is currently supported.
 
+If you are using the delightful [`pytest-xdist`](https://pypi.org/project/pytest-xdist/)
+package to spread your tests out over multiple processes or hosts,
+`pytest-opentelemetry` will automatically unite them all under one trace.  If this
+`pytest` run is part of a larger trace, you can provide a `--trace-parent` argument to
+nest this run under that parent:
+
+```bash
+pytest ... --trace-parent 00-1234567890abcdef1234567890abcdef-fedcba0987654321-01
+```
+
 ## Visualizing Test Traces
 
 One quick way to visualize test traces would be to use an [OpenTelemetry

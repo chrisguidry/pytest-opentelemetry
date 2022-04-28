@@ -17,6 +17,10 @@ profile = "black"
 [tool.mypy]
 namespace_packages = true
 
+[[tool.mypy.overrides]]
+module = ['xdist.workermanage']
+ignore_missing_imports = true
+
 [tool.pylint.messages_control]
 disable = [
     'attribute-defined-outside-init',

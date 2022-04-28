@@ -4,6 +4,7 @@ from _pytest.config.argparsing import Parser
 
 def pytest_addoption(parser: Parser) -> None:
     parser.addoption("--export-traces", action="store_true", default=False)
+    parser.addoption("--trace-parent", action="store", default=None)
 
 
 def pytest_configure(config: Config) -> None:
