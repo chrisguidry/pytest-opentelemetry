@@ -1,4 +1,4 @@
-from typing import Any, Generator
+from typing import Any, Generator, Optional
 
 import opentelemetry.sdk.trace as trace_sdk
 import pytest
@@ -7,7 +7,8 @@ from _pytest.main import Session
 from _pytest.nodes import Item, Node
 from _pytest.reports import TestReport
 from _pytest.runner import CallInfo
-from opentelemetry import trace
+from opentelemetry import propagate, trace
+from opentelemetry.context.context import Context
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
@@ -15,6 +16,11 @@ from opentelemetry.semconv.trace import SpanAttributes
 from opentelemetry.trace import Status, StatusCode, TracerProvider
 
 from . import resource
+
+try:
+    from xdist.workermanage import WorkerController  # pylint: disable=unused-import
+except ImportError:  # pragma: no cover
+    WorkerController = None
 
 tracer = trace.get_tracer('pytest-opentelemetry')
 
@@ -27,14 +33,25 @@ class OpenTelemetryPlugin:
     def _initialize_trace_provider(resource: Resource, export: bool) -> TracerProvider:
         provider = trace.get_tracer_provider()
 
-        if not isinstance(provider, trace_sdk.TracerProvider):  # pragma: no cover
+        if not isinstance(provider, trace_sdk.TracerProvider):
             provider = trace_sdk.TracerProvider(resource=resource)
             trace.set_tracer_provider(provider)
 
-        if export:  # pragma: no cover
+        if export:  # pragma: no cover (This can't be tested both ways in one process)
             provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
 
         return provider
+
+    @staticmethod
+    def get_trace_parent(config: Config) -> Optional[Context]:
+        if trace_parent := config.getvalue('--trace-parent'):
+            from_arguments = {'traceparent': trace_parent}
+            return propagate.extract(from_arguments)
+
+        if workerinput := getattr(config, 'workerinput', None):
+            return propagate.extract(workerinput)
+
+        return None
 
     def pytest_configure(self, config: Config) -> None:
         attributes = {
@@ -43,13 +60,21 @@ class OpenTelemetryPlugin:
             **resource.get_codebase_attributes(),
         }
 
+        self.trace_parent = self.get_trace_parent(config)
+        self.worker_id = getattr(config, 'workerinput', {}).get('workerid')
+
         self.provider = self._initialize_trace_provider(
             resource=Resource.create(attributes),
             export=config.getoption('--export-traces'),
         )
 
     def pytest_sessionstart(self, session: Session) -> None:
-        self.session_span = tracer.start_span('test session')
+        session_name = f'test worker {self.worker_id}' if self.worker_id else 'test run'
+        self.session_span = tracer.start_span(session_name, context=self.trace_parent)
+
+    def pytest_configure_node(self, node: WorkerController) -> None:  # pragma: no cover
+        with trace.use_span(self.session_span, end_on_exit=False):
+            propagate.inject(node.workerinput)
 
     def pytest_sessionfinish(self, session: Session) -> None:
         self.session_span.end()
