@@ -10,12 +10,14 @@ from _pytest.runner import CallInfo
 from opentelemetry import propagate, trace
 from opentelemetry.context.context import Context
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.resources import Resource, get_aggregated_resources
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.semconv.trace import SpanAttributes
 from opentelemetry.trace import Status, StatusCode, TracerProvider
+from opentelemetry_resourcedetector_docker import DockerResourceDetector
+from opentelemetry_resourcedetector_process import ProcessResourceDetector
 
-from . import resource
+from pytest_opentelemetry.resource import CodebaseResourceDetector
 
 try:
     from xdist.workermanage import WorkerController  # pylint: disable=unused-import
@@ -54,17 +56,17 @@ class OpenTelemetryPlugin:
         return None
 
     def pytest_configure(self, config: Config) -> None:
-        attributes = {
-            **resource.get_process_attributes(),
-            **resource.get_runtime_attributes(),
-            **resource.get_codebase_attributes(),
-        }
-
         self.trace_parent = self.get_trace_parent(config)
         self.worker_id = getattr(config, 'workerinput', {}).get('workerid')
 
         self.provider = self._initialize_trace_provider(
-            resource=Resource.create(attributes),
+            resource=get_aggregated_resources(
+                [
+                    CodebaseResourceDetector(),
+                    DockerResourceDetector(),
+                    ProcessResourceDetector(),
+                ]
+            ),
             export=config.getoption('--export-traces'),
         )
 
