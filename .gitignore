@@ -6,3 +6,4 @@ dist
 __pycache__
 .python-version
 *.egg-info
+.vscode
