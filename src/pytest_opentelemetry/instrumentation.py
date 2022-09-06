@@ -17,11 +17,6 @@ from opentelemetry_container_distro import (
 
 from .resource import CodebaseResourceDetector
 
-try:
-    from xdist.workermanage import WorkerController  # pylint: disable=unused-import
-except ImportError:  # pragma: no cover
-    WorkerController = None
-
 tracer = trace.get_tracer('pytest-opentelemetry')
 
 
@@ -29,20 +24,16 @@ class OpenTelemetryPlugin:
     """A pytest plugin which produces OpenTelemetry spans around test sessions and
     individual test runs."""
 
-    @staticmethod
-    def get_trace_parent(config: Config) -> Optional[Context]:
+    @classmethod
+    def get_trace_parent(cls, config: Config) -> Optional[Context]:
         if trace_parent := config.getvalue('--trace-parent'):
             from_arguments = {'traceparent': trace_parent}
             return propagate.extract(from_arguments)
-
-        if workerinput := getattr(config, 'workerinput', None):
-            return propagate.extract(workerinput)
 
         return None
 
     def pytest_configure(self, config: Config) -> None:
         self.trace_parent = self.get_trace_parent(config)
-        self.worker_id = getattr(config, 'workerinput', {}).get('workerid')
 
         # This can't be tested both ways in one process
         if config.getoption('--export-traces'):  # pragma: no cover
@@ -52,13 +43,13 @@ class OpenTelemetryPlugin:
         configurator.resource_detectors.append(CodebaseResourceDetector())
         configurator.configure()
 
-    def pytest_sessionstart(self, session: Session) -> None:
-        session_name = f'test worker {self.worker_id}' if self.worker_id else 'test run'
-        self.session_span = tracer.start_span(session_name, context=self.trace_parent)
+    session_name: str = 'test run'
 
-    def pytest_configure_node(self, node: WorkerController) -> None:  # pragma: no cover
-        with trace.use_span(self.session_span, end_on_exit=False):
-            propagate.inject(node.workerinput)
+    def pytest_sessionstart(self, session: Session) -> None:
+        self.session_span = tracer.start_span(
+            self.session_name,
+            context=self.trace_parent,
+        )
 
     def pytest_sessionfinish(self, session: Session) -> None:
         self.session_span.end()
@@ -110,3 +101,31 @@ class OpenTelemetryPlugin:
 
         status_code = StatusCode.ERROR if report.outcome == 'failed' else StatusCode.OK
         trace.get_current_span().set_status(Status(status_code))
+
+
+try:
+    from xdist.workermanage import WorkerController  # pylint: disable=unused-import
+except ImportError:  # pragma: no cover
+    WorkerController = None
+
+
+class XdistOpenTelemetryPlugin(OpenTelemetryPlugin):
+    """An xdist-aware version of the OpenTelemetryPlugin"""
+
+    @classmethod
+    def get_trace_parent(cls, config: Config) -> Optional[Context]:
+        if workerinput := getattr(config, 'workerinput', None):
+            return propagate.extract(workerinput)
+
+        return super().get_trace_parent(config)
+
+    def pytest_configure(self, config: Config) -> None:
+        super().pytest_configure(config)
+        worker_id = getattr(config, 'workerinput', {}).get('workerid')
+        self.session_name = (
+            f'test worker {worker_id}' if worker_id else self.session_name
+        )
+
+    def pytest_configure_node(self, node: WorkerController) -> None:  # pragma: no cover
+        with trace.use_span(self.session_span, end_on_exit=False):
+            propagate.inject(node.workerinput)

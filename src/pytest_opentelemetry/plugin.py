@@ -30,6 +30,12 @@ def pytest_addoption(parser: Parser) -> None:
 
 def pytest_configure(config: Config) -> None:
     # pylint: disable=import-outside-toplevel
-    from pytest_opentelemetry.instrumentation import OpenTelemetryPlugin
+    from pytest_opentelemetry.instrumentation import (
+        OpenTelemetryPlugin,
+        XdistOpenTelemetryPlugin,
+    )
 
-    config.pluginmanager.register(OpenTelemetryPlugin())
+    if config.pluginmanager.has_plugin("xdist"):
+        config.pluginmanager.register(XdistOpenTelemetryPlugin())
+    else:
+        config.pluginmanager.register(OpenTelemetryPlugin())

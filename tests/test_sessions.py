@@ -1,7 +1,10 @@
 from _pytest.pytester import Pytester
 from opentelemetry import trace
 
-from pytest_opentelemetry.instrumentation import OpenTelemetryPlugin
+from pytest_opentelemetry.instrumentation import (
+    OpenTelemetryPlugin,
+    XdistOpenTelemetryPlugin,
+)
 
 from . import SpanRecorder
 
@@ -35,7 +38,7 @@ def test_getting_trace_id_from_worker_input(pytester: Pytester) -> None:
         'workerinput',
         {'traceparent': '00-1234567890abcdef1234567890abcdef-fedcba0987654321-01'},
     )
-    context = OpenTelemetryPlugin.get_trace_parent(config)
+    context = XdistOpenTelemetryPlugin.get_trace_parent(config)
     assert context
 
     parent_span = next(iter(context.values()))
@@ -86,7 +89,6 @@ def test_multiple_workers(pytester: Pytester, span_recorder: SpanRecorder) -> No
 
             span = trace.get_current_span()
             assert span.context.trace_id == 0x1234567890abcdef1234567890abcdef
-            assert span.context.span_id != 0xfedcba0987654321
 
         def test_two(worker_id):
             # confirm that this is an xdist worker
@@ -94,12 +96,34 @@ def test_multiple_workers(pytester: Pytester, span_recorder: SpanRecorder) -> No
 
             span = trace.get_current_span()
             assert span.context.trace_id == 0x1234567890abcdef1234567890abcdef
-            assert span.context.span_id != 0xfedcba0987654321
     """
     )
     result = pytester.runpytest_subprocess(
         '-n',
         '2',
+        '--trace-parent',
+        '00-1234567890abcdef1234567890abcdef-fedcba0987654321-01',
+    )
+    result.assert_outcomes(passed=2)
+
+
+def test_works_without_xdist(pytester: Pytester, span_recorder: SpanRecorder) -> None:
+    pytester.makepyfile(
+        """
+        from opentelemetry import trace
+
+        def test_one():
+            span = trace.get_current_span()
+            assert span.context.trace_id == 0x1234567890abcdef1234567890abcdef
+
+        def test_two():
+            span = trace.get_current_span()
+            assert span.context.trace_id == 0x1234567890abcdef1234567890abcdef
+    """
+    )
+    result = pytester.runpytest_subprocess(
+        '-p',
+        'no:xdist',
         '--trace-parent',
         '00-1234567890abcdef1234567890abcdef-fedcba0987654321-01',
     )
