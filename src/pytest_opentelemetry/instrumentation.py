@@ -8,6 +8,7 @@ from _pytest.reports import TestReport
 from _pytest.runner import CallInfo
 from opentelemetry import propagate, trace
 from opentelemetry.context.context import Context
+from opentelemetry.sdk.resources import OTELResourceDetector
 from opentelemetry.semconv.trace import SpanAttributes
 from opentelemetry.trace import Status, StatusCode
 from opentelemetry_container_distro import (
@@ -41,6 +42,7 @@ class OpenTelemetryPlugin:
 
         configurator = OpenTelemetryContainerConfigurator()
         configurator.resource_detectors.append(CodebaseResourceDetector())
+        configurator.resource_detectors.append(OTELResourceDetector())
         configurator.configure()
 
     session_name: str = 'test run'
