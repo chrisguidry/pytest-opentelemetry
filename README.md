@@ -10,11 +10,18 @@ measuring your test suite's runtime in detail, and keeping a history of this run
 in a visualization tool like [Jaeger](https://jaegertracing.io), you can spot 
 test bottlenecks that might be slowing your entire suite down.
 
-Even if you only enable `pytest-opentelemetry` for occasional debugging, it can help
-you understand _exactly_ what is slowing your test suite down.  Did you forget to mock
-that `requests` call?  Didn't realize the test suite was creating 10,000 example 
-accounts?  Should that database setup fixture be marked `scope=module`? These are 
-the kinds of questions `pytest-opentelemetry` can help you answer.
+Additionally, `pytest` makes an excellent driver for _integration_ tests that operate
+on fully deployed systems, like your testing/staging environment.  By using 
+`pytest-opentelemetry` and configuring the appropriate propagators, you can connect
+traces from your integration test suite to your running system to analyze failures
+more quickly.
+
+Even if you only enable `pytest-opentelemetry` locally for occasional debugging, it 
+can help you understand _exactly_ what is slowing your test suite down.  Did you 
+forget to mock that `requests` call?  Didn't realize the test suite was creating 
+10,000 example accounts?  Should that database setup fixture be marked 
+`scope=module`? These are the kinds of questions `pytest-opentelemetry` can help 
+you answer.
 
 `pytest-opentelemetry` works even better when testing applications and libraries that 
 are themselves instrumented with OpenTelemetry.  This will give you deeper visibility 
