@@ -23,6 +23,7 @@ tracer = trace.get_tracer('pytest-opentelemetry')
 
 PYTEST_SPAN_TYPE = "pytest.span_type"
 
+
 class OpenTelemetryPlugin:
     """A pytest plugin which produces OpenTelemetry spans around test sessions and
     individual test runs."""
@@ -55,10 +56,14 @@ class OpenTelemetryPlugin:
             context=self.trace_parent,
             attributes={
                 PYTEST_SPAN_TYPE: "run",
-            }
+            },
         )
+        self.has_error = False
 
     def pytest_sessionfinish(self, session: Session) -> None:
+        self.session_span.set_status(
+            StatusCode.ERROR if self.has_error else StatusCode.OK
+        )
         self.session_span.end()
 
     @pytest.hookimpl(hookwrapper=True)
@@ -105,13 +110,14 @@ class OpenTelemetryPlugin:
             )
         )
 
-    @staticmethod
-    def pytest_runtest_logreport(report: TestReport) -> None:
+    def pytest_runtest_logreport(self, report: TestReport) -> None:
         if report.when != 'call':
             return
 
-        status_code = StatusCode.ERROR if report.outcome == 'failed' else StatusCode.OK
-        trace.get_current_span().set_status(Status(status_code))
+        has_error = report.outcome == 'failed'
+        status_code = StatusCode.ERROR if has_error else StatusCode.OK
+        self.has_error |= has_error
+        trace.get_current_span().set_status(status_code)
 
 
 try:
