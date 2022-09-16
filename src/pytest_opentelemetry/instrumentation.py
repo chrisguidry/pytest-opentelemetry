@@ -1,3 +1,4 @@
+import os
 from typing import Any, Generator, Optional
 
 import pytest
@@ -45,7 +46,7 @@ class OpenTelemetryPlugin:
         configurator.resource_detectors.append(OTELResourceDetector())
         configurator.configure()
 
-    session_name: str = 'test run'
+    session_name: str = os.environ.get('PYTEST_RUN_NAME', 'test run')
 
     def pytest_sessionstart(self, session: Session) -> None:
         self.session_span = tracer.start_span(
