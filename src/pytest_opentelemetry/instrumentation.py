@@ -21,6 +21,7 @@ from .resource import CodebaseResourceDetector
 
 tracer = trace.get_tracer('pytest-opentelemetry')
 
+PYTEST_SPAN_TYPE = "pytest.span_type"
 
 class OpenTelemetryPlugin:
     """A pytest plugin which produces OpenTelemetry spans around test sessions and
@@ -52,6 +53,9 @@ class OpenTelemetryPlugin:
         self.session_span = tracer.start_span(
             self.session_name,
             context=self.trace_parent,
+            attributes={
+                PYTEST_SPAN_TYPE: "run",
+            }
         )
 
     def pytest_sessionfinish(self, session: Session) -> None:
@@ -65,8 +69,9 @@ class OpenTelemetryPlugin:
             attributes = {
                 SpanAttributes.CODE_FILEPATH: filepath,
                 SpanAttributes.CODE_FUNCTION: item.name,
-                "test.id": item.nodeid,
-                "test.keywords": str(item.keywords),
+                "pytest.nodeid": item.nodeid,
+                "pytest.keywords": str(item.keywords),
+                PYTEST_SPAN_TYPE: "test",
             }
             # In some cases like tavern, line_number can be 0
             if line_number:
