@@ -1,5 +1,5 @@
 import os
-from typing import Any, Generator, Optional
+from typing import Any, Dict, Generator, Optional, Union
 
 import pytest
 from _pytest.config import Config
@@ -69,20 +69,19 @@ class OpenTelemetryPlugin:
     @pytest.hookimpl(hookwrapper=True)
     def pytest_runtest_protocol(self, item: Item) -> Generator[None, None, None]:
         context = trace.set_span_in_context(self.session_span)
-        with tracer.start_as_current_span(item.name, context=context) as test_span:
-            filepath, line_number, domain = item.location
-            attributes = {
-                SpanAttributes.CODE_FILEPATH: filepath,
-                SpanAttributes.CODE_FUNCTION: item.name,
-                "pytest.nodeid": item.nodeid,
-                "pytest.keywords": str(item.keywords),
-                PYTEST_SPAN_TYPE: "test",
-            }
-            # In some cases like tavern, line_number can be 0
-            if line_number:
-                attributes[SpanAttributes.CODE_LINENO] = line_number
-            test_span.set_attributes(attributes)
-
+        filepath, line_number, _ = item.location
+        attributes: Dict[str, Union[str, int]] = {
+            SpanAttributes.CODE_FILEPATH: filepath,
+            SpanAttributes.CODE_FUNCTION: item.name,
+            "pytest.nodeid": item.nodeid,
+            PYTEST_SPAN_TYPE: "test",
+        }
+        # In some cases like tavern, line_number can be 0
+        if line_number:
+            attributes[SpanAttributes.CODE_LINENO] = line_number
+        with tracer.start_as_current_span(
+            item.name, attributes=attributes, context=context
+        ):
             yield
 
     @staticmethod
