@@ -1,4 +1,5 @@
-from typing import Any, Generator, Optional
+import os
+from typing import Any, Dict, Generator, Optional, Union
 
 import pytest
 from _pytest.config import Config
@@ -19,6 +20,8 @@ from opentelemetry_container_distro import (
 from .resource import CodebaseResourceDetector
 
 tracer = trace.get_tracer('pytest-opentelemetry')
+
+PYTEST_SPAN_TYPE = "pytest.span_type"
 
 
 class OpenTelemetryPlugin:
@@ -45,30 +48,40 @@ class OpenTelemetryPlugin:
         configurator.resource_detectors.append(OTELResourceDetector())
         configurator.configure()
 
-    session_name: str = 'test run'
+    session_name: str = os.environ.get('PYTEST_RUN_NAME', 'test run')
 
     def pytest_sessionstart(self, session: Session) -> None:
         self.session_span = tracer.start_span(
             self.session_name,
             context=self.trace_parent,
+            attributes={
+                PYTEST_SPAN_TYPE: "run",
+            },
         )
+        self.has_error = False
 
     def pytest_sessionfinish(self, session: Session) -> None:
+        self.session_span.set_status(
+            StatusCode.ERROR if self.has_error else StatusCode.OK
+        )
         self.session_span.end()
 
     @pytest.hookimpl(hookwrapper=True)
     def pytest_runtest_protocol(self, item: Item) -> Generator[None, None, None]:
         context = trace.set_span_in_context(self.session_span)
-        with tracer.start_as_current_span(item.nodeid, context=context) as test_span:
-            filepath, line_number, domain = item.location
-            test_span.set_attributes(
-                {
-                    SpanAttributes.CODE_FUNCTION: domain,
-                    SpanAttributes.CODE_FILEPATH: filepath,
-                    SpanAttributes.CODE_LINENO: str(line_number),
-                }
-            )
-
+        filepath, line_number, _ = item.location
+        attributes: Dict[str, Union[str, int]] = {
+            SpanAttributes.CODE_FILEPATH: filepath,
+            SpanAttributes.CODE_FUNCTION: item.name,
+            "pytest.nodeid": item.nodeid,
+            PYTEST_SPAN_TYPE: "test",
+        }
+        # In some cases like tavern, line_number can be 0
+        if line_number:
+            attributes[SpanAttributes.CODE_LINENO] = line_number
+        with tracer.start_as_current_span(
+            item.name, attributes=attributes, context=context
+        ):
             yield
 
     @staticmethod
@@ -96,13 +109,14 @@ class OpenTelemetryPlugin:
             )
         )
 
-    @staticmethod
-    def pytest_runtest_logreport(report: TestReport) -> None:
+    def pytest_runtest_logreport(self, report: TestReport) -> None:
         if report.when != 'call':
             return
 
-        status_code = StatusCode.ERROR if report.outcome == 'failed' else StatusCode.OK
-        trace.get_current_span().set_status(Status(status_code))
+        has_error = report.outcome == 'failed'
+        status_code = StatusCode.ERROR if has_error else StatusCode.OK
+        self.has_error |= has_error
+        trace.get_current_span().set_status(status_code)
 
 
 try:
