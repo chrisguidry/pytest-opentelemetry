@@ -7,24 +7,24 @@ Instruments your pytest runs, exporting the spans and timing via OpenTelemetry.
 As projects grow larger, perhaps with many contributors, test suite runtime can be
 a significant limiting factor to how fast you and your team can deliver changes.  By
 measuring your test suite's runtime in detail, and keeping a history of this runtime
-in a visualization tool like [Jaeger](https://jaegertracing.io), you can spot 
+in a visualization tool like [Jaeger](https://jaegertracing.io), you can spot
 test bottlenecks that might be slowing your entire suite down.
 
 Additionally, `pytest` makes an excellent driver for _integration_ tests that operate
-on fully deployed systems, like your testing/staging environment.  By using 
+on fully deployed systems, like your testing/staging environment.  By using
 `pytest-opentelemetry` and configuring the appropriate propagators, you can connect
 traces from your integration test suite to your running system to analyze failures
 more quickly.
 
-Even if you only enable `pytest-opentelemetry` locally for occasional debugging, it 
-can help you understand _exactly_ what is slowing your test suite down.  Did you 
-forget to mock that `requests` call?  Didn't realize the test suite was creating 
-10,000 example accounts?  Should that database setup fixture be marked 
-`scope=module`? These are the kinds of questions `pytest-opentelemetry` can help 
+Even if you only enable `pytest-opentelemetry` locally for occasional debugging, it
+can help you understand _exactly_ what is slowing your test suite down.  Did you
+forget to mock that `requests` call?  Didn't realize the test suite was creating
+10,000 example accounts?  Should that database setup fixture be marked
+`scope=module`? These are the kinds of questions `pytest-opentelemetry` can help
 you answer.
 
-`pytest-opentelemetry` works even better when testing applications and libraries that 
-are themselves instrumented with OpenTelemetry.  This will give you deeper visibility 
+`pytest-opentelemetry` works even better when testing applications and libraries that
+are themselves instrumented with OpenTelemetry.  This will give you deeper visibility
 into the layers of your stack, like database queries and network requests.
 
 ## Installation and usage
@@ -59,9 +59,9 @@ pytest --export-traces
 Only the OTLP over gRPC exporter is currently supported.
 
 `pytest-opentelemetry` will use the name of the project's directory as the OpenTelemetry
-`service.name`, but it will also respect the standard `OTEL_SERVICE_NAME` and 
+`service.name`, but it will also respect the standard `OTEL_SERVICE_NAME` and
 `OTEL_RESOURCE_ATTRIBUTES` environment variables.  If you would like to permanently
-specify those for your project, consider using the very helpful 
+specify those for your project, consider using the very helpful
 [`pytest-env`](https://pypi.org/project/pytest-env/) package to set these for all test
 runs, for example, in your `pyproject.toml`:
 

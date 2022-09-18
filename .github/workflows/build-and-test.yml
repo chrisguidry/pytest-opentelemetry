@@ -19,19 +19,11 @@ jobs:
     - uses: actions/checkout@v3
       with:
         fetch-depth: 0
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v3
+    - uses: actions/setup-python@v3
       with:
         python-version: ${{ matrix.python-version }}
-    - name: Install prerequisites
-      run: |
-        python -m pip install --upgrade pip build
-    - name: Build package
-      run: |
-        python -m build
-    - name: Install package
-      run:
-        pip install -e '.[dev]'
-    - name: Test with pytest
-      run: |
-        pytest
+    - run: python -m pip install --upgrade pip build
+    - run: python -m build
+    - run: pip install -e '.[dev]'
+    - run: pytest
+    - run: pre-commit run --all-files
