@@ -10,6 +10,7 @@ target-version = ['py39']
 
 [tool.coverage.report]
 omit = [
+    "src/pytest_opentelemetry/__init__.py",
     "src/pytest_opentelemetry/plugin.py"
 ]
 
