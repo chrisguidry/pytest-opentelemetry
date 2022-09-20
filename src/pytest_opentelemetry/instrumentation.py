@@ -28,6 +28,17 @@ class OpenTelemetryPlugin:
     """A pytest plugin which produces OpenTelemetry spans around test sessions and
     individual test runs."""
 
+    @property
+    def session_name(self):
+        # Lazy initialise session name
+        if not hasattr(self, '_session_name'):
+            self._session_name = os.environ.get('PYTEST_RUN_NAME', 'test run')
+        return self._session_name
+
+    @session_name.setter
+    def session_name(self, name):
+        self._session_name = name
+
     @classmethod
     def get_trace_parent(cls, config: Config) -> Optional[Context]:
         if trace_parent := config.getvalue('--trace-parent'):
@@ -47,8 +58,6 @@ class OpenTelemetryPlugin:
         configurator.resource_detectors.append(CodebaseResourceDetector())
         configurator.resource_detectors.append(OTELResourceDetector())
         configurator.configure()
-
-    session_name: str = os.environ.get('PYTEST_RUN_NAME', 'test run')
 
     def pytest_sessionstart(self, session: Session) -> None:
         self.session_span = tracer.start_span(
