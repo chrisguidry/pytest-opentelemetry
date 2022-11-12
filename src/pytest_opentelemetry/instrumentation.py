@@ -42,8 +42,10 @@ class OpenTelemetryPlugin:
     @classmethod
     def get_trace_parent(cls, config: Config) -> Optional[Context]:
         if trace_parent := config.getvalue('--trace-parent'):
-            from_arguments = {'traceparent': trace_parent}
-            return propagate.extract(from_arguments)
+            return propagate.extract({'traceparent': trace_parent})
+
+        if trace_parent := os.environ.get('TRACEPARENT'):
+            return propagate.extract({'traceparent': trace_parent})
 
         return None
 
