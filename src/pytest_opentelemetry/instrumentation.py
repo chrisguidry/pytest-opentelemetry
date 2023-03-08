@@ -103,12 +103,15 @@ class OpenTelemetryPlugin:
     ) -> None:
         excinfo = call.excinfo
         assert excinfo
-        assert isinstance(excinfo.value, Exception)
+        assert isinstance(excinfo.value, BaseException)
 
         test_span = trace.get_current_span()
 
         test_span.record_exception(
-            exception=excinfo.value,
+            # Interface says Exception, but BaseException seems to work fine
+            # This is needed because pytest's Failed exception inherits from
+            # BaseException, not Exception
+            exception=excinfo.value,  # type: ignore[arg-type]
             attributes={
                 SpanAttributes.EXCEPTION_STACKTRACE: str(report.longrepr),
             },
