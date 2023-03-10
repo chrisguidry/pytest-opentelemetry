@@ -54,6 +54,8 @@ def test_simple_pytest_functions(
 def test_failures_and_errors(pytester: Pytester, span_recorder: SpanRecorder) -> None:
     pytester.makepyfile(
         """
+        import pytest
+
         def test_one():
             assert 1 + 2 == 3
 
@@ -62,13 +64,18 @@ def test_failures_and_errors(pytester: Pytester, span_recorder: SpanRecorder) ->
 
         def test_three():
             raise ValueError('woops')
+
+        def test_four():
+            # Test did not raise case
+            with pytest.raises(ValueError):
+                pass
     """
     )
     result = pytester.runpytest()
-    result.assert_outcomes(passed=1, failed=2)
+    result.assert_outcomes(passed=1, failed=3)
 
     spans = span_recorder.spans_by_name()
-    assert len(spans) == 3 + 1
+    assert len(spans) == 4 + 1
 
     span = spans['test run']
     assert not span.status.is_ok
@@ -81,7 +88,7 @@ def test_failures_and_errors(pytester: Pytester, span_recorder: SpanRecorder) ->
     assert span.attributes
     assert span.attributes['code.function'] == 'test_two'
     assert span.attributes['code.filepath'] == 'test_failures_and_errors.py'
-    assert span.attributes['code.lineno'] == 3
+    assert span.attributes['code.lineno'] == 5
     assert 'exception.stacktrace' not in span.attributes
     assert len(span.events) == 1
     event = span.events[0]
@@ -93,13 +100,26 @@ def test_failures_and_errors(pytester: Pytester, span_recorder: SpanRecorder) ->
     assert span.attributes
     assert span.attributes['code.function'] == 'test_three'
     assert span.attributes['code.filepath'] == 'test_failures_and_errors.py'
-    assert span.attributes['code.lineno'] == 6
+    assert span.attributes['code.lineno'] == 8
     assert 'exception.stacktrace' not in span.attributes
     assert len(span.events) == 1
     event = span.events[0]
     assert event.attributes
     assert event.attributes['exception.type'] == 'ValueError'
     assert event.attributes['exception.message'] == 'woops'
+
+    span = spans['test_four']
+    assert not span.status.is_ok
+    assert span.attributes
+    assert span.attributes['code.function'] == 'test_four'
+    assert span.attributes['code.filepath'] == 'test_failures_and_errors.py'
+    assert span.attributes['code.lineno'] == 11
+    assert 'exception.stacktrace' not in span.attributes
+    assert len(span.events) == 1
+    event = span.events[0]
+    assert event.attributes
+    assert event.attributes['exception.type'] == 'Failed'
+    assert event.attributes['exception.message'] == "DID NOT RAISE <class 'ValueError'>"
 
 
 def test_failures_in_fixtures(pytester: Pytester, span_recorder: SpanRecorder) -> None:
