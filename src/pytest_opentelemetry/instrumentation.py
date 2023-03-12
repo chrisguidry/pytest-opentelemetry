@@ -49,10 +49,20 @@ class OpenTelemetryPlugin:
 
         return None
 
+    @classmethod
+    def try_force_flush(cls) -> bool:
+        provider = trace.get_tracer_provider()
+
+        # Not all providers (e.g. ProxyTraceProvider) implement force flush
+        if hasattr(provider, 'force_flush'):
+            provider.force_flush()
+            return True
+        else:
+            return False
+
     def pytest_configure(self, config: Config) -> None:
         self.trace_parent = self.get_trace_parent(config)
 
-        # This can't be tested both ways in one process
         if config.getoption('--export-traces'):  # pragma: no cover
             OpenTelemetryContainerDistro().configure()
 
@@ -75,6 +85,8 @@ class OpenTelemetryPlugin:
         self.session_span.set_status(
             StatusCode.ERROR if self.has_error else StatusCode.OK
         )
+
+        self.try_force_flush()
         self.session_span.end()
 
     @pytest.hookimpl(hookwrapper=True)
@@ -159,3 +171,6 @@ class XdistOpenTelemetryPlugin(OpenTelemetryPlugin):
     def pytest_configure_node(self, node: WorkerController) -> None:  # pragma: no cover
         with trace.use_span(self.session_span, end_on_exit=False):
             propagate.inject(node.workerinput)
+
+    def pytest_xdist_node_collection_finished(node, ids):
+        super().try_force_flush()
