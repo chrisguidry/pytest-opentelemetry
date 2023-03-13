@@ -63,10 +63,10 @@ class OpenTelemetryPlugin:
     def pytest_configure(self, config: Config) -> None:
         self.trace_parent = self.get_trace_parent(config)
 
+        # This can't be tested both ways in one process
         if config.getoption('--export-traces'):  # pragma: no cover
             OpenTelemetryContainerDistro().configure()
 
-        # This can't be tested both ways in one process
         configurator = OpenTelemetryContainerConfigurator()
         configurator.resource_detectors.append(CodebaseResourceDetector())
         configurator.resource_detectors.append(OTELResourceDetector())
