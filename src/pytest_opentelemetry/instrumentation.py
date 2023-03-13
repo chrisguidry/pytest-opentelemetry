@@ -66,6 +66,7 @@ class OpenTelemetryPlugin:
         if config.getoption('--export-traces'):  # pragma: no cover
             OpenTelemetryContainerDistro().configure()
 
+        # This can't be tested both ways in one process
         configurator = OpenTelemetryContainerConfigurator()
         configurator.resource_detectors.append(CodebaseResourceDetector())
         configurator.resource_detectors.append(OTELResourceDetector())
@@ -86,8 +87,8 @@ class OpenTelemetryPlugin:
             StatusCode.ERROR if self.has_error else StatusCode.OK
         )
 
-        self.try_force_flush()
         self.session_span.end()
+        self.try_force_flush()
 
     @pytest.hookimpl(hookwrapper=True)
     def pytest_runtest_protocol(self, item: Item) -> Generator[None, None, None]:
