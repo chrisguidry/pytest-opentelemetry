@@ -1,6 +1,7 @@
 import os
 from contextlib import contextmanager
 from typing import Dict, Generator, Optional
+from unittest.mock import Mock, patch
 
 from _pytest.pytester import Pytester
 from opentelemetry import trace
@@ -184,3 +185,22 @@ def test_works_without_xdist(pytester: Pytester, span_recorder: SpanRecorder) ->
         '00-1234567890abcdef1234567890abcdef-fedcba0987654321-01',
     )
     result.assert_outcomes(passed=2)
+
+
+@patch.object(trace, 'get_tracer_provider')
+def test_force_flush_with_supported_provider(mock_get_tracer_provider):
+    provider = Mock()
+    provider.force_flush = Mock(return_value=None)
+    mock_get_tracer_provider.return_value = provider
+
+    for plugin in OpenTelemetryPlugin, XdistOpenTelemetryPlugin:
+        assert plugin.try_force_flush() is True
+
+
+@patch.object(trace, 'get_tracer_provider')
+def test_force_flush_with_unsupported_provider(mock_get_tracer_provider):
+    provider = Mock(spec=trace.ProxyTracerProvider)
+    mock_get_tracer_provider.return_value = provider
+
+    for plugin in OpenTelemetryPlugin, XdistOpenTelemetryPlugin:
+        assert plugin.try_force_flush() is False

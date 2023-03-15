@@ -49,6 +49,17 @@ class OpenTelemetryPlugin:
 
         return None
 
+    @classmethod
+    def try_force_flush(cls) -> bool:
+        provider = trace.get_tracer_provider()
+
+        # Not all providers (e.g. ProxyTraceProvider) implement force flush
+        if hasattr(provider, 'force_flush'):
+            provider.force_flush()
+            return True
+        else:
+            return False
+
     def pytest_configure(self, config: Config) -> None:
         self.trace_parent = self.get_trace_parent(config)
 
@@ -75,7 +86,9 @@ class OpenTelemetryPlugin:
         self.session_span.set_status(
             StatusCode.ERROR if self.has_error else StatusCode.OK
         )
+
         self.session_span.end()
+        self.try_force_flush()
 
     @pytest.hookimpl(hookwrapper=True)
     def pytest_runtest_protocol(self, item: Item) -> Generator[None, None, None]:
@@ -159,3 +172,6 @@ class XdistOpenTelemetryPlugin(OpenTelemetryPlugin):
     def pytest_configure_node(self, node: WorkerController) -> None:  # pragma: no cover
         with trace.use_span(self.session_span, end_on_exit=False):
             propagate.inject(node.workerinput)
+
+    def pytest_xdist_node_collection_finished(node, ids):  # pragma: no cover
+        super().try_force_flush()
