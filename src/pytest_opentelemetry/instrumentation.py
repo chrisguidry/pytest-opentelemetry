@@ -3,6 +3,7 @@ from typing import Any, Dict, Generator, Optional, Union
 
 import pytest
 from _pytest.config import Config
+from _pytest.fixtures import FixtureDef, SubRequest
 from _pytest.main import Session
 from _pytest.nodes import Item, Node
 from _pytest.reports import TestReport
@@ -20,8 +21,6 @@ from opentelemetry_container_distro import (
 from .resource import CodebaseResourceDetector
 
 tracer = trace.get_tracer('pytest-opentelemetry')
-
-PYTEST_SPAN_TYPE = "pytest.span_type"
 
 
 class OpenTelemetryPlugin:
@@ -77,7 +76,7 @@ class OpenTelemetryPlugin:
             self.session_name,
             context=self.trace_parent,
             attributes={
-                PYTEST_SPAN_TYPE: "run",
+                "pytest.span_type": "run",
             },
         )
         self.has_error = False
@@ -90,21 +89,72 @@ class OpenTelemetryPlugin:
         self.session_span.end()
         self.try_force_flush()
 
-    @pytest.hookimpl(hookwrapper=True)
-    def pytest_runtest_protocol(self, item: Item) -> Generator[None, None, None]:
-        context = trace.set_span_in_context(self.session_span)
+    def _attributes_from_item(self, item: Item) -> Dict[str, Union[str, int]]:
         filepath, line_number, _ = item.location
         attributes: Dict[str, Union[str, int]] = {
             SpanAttributes.CODE_FILEPATH: filepath,
             SpanAttributes.CODE_FUNCTION: item.name,
             "pytest.nodeid": item.nodeid,
-            PYTEST_SPAN_TYPE: "test",
+            "pytest.span_type": "test",
         }
         # In some cases like tavern, line_number can be 0
         if line_number:
             attributes[SpanAttributes.CODE_LINENO] = line_number
+        return attributes
+
+    @pytest.hookimpl(hookwrapper=True)
+    def pytest_runtest_setup(self, item: Item) -> Generator[None, None, None]:
         with tracer.start_as_current_span(
-            item.name, attributes=attributes, context=context
+            'setup',
+            attributes=self._attributes_from_item(item),
+        ):
+            yield
+
+    @pytest.hookimpl(hookwrapper=True)
+    def pytest_fixture_setup(
+        self, fixturedef: FixtureDef, request: pytest.FixtureRequest
+    ) -> Generator[None, None, None]:
+        context: Context = None
+        if fixturedef.scope != 'function':
+            context = trace.set_span_in_context(self.session_span)
+
+        if fixturedef.params and 'request' in fixturedef.argnames:
+            try:
+                parameter = str(request.param)
+            except Exception:
+                parameter = str(
+                    request.param_index if isinstance(request, SubRequest) else '?'
+                )
+            name = f"{fixturedef.argname}[{parameter}]"
+        else:
+            name = fixturedef.argname
+
+        attributes: Dict[str, Union[str, int]] = {
+            SpanAttributes.CODE_FILEPATH: fixturedef.func.__code__.co_filename,
+            SpanAttributes.CODE_FUNCTION: fixturedef.argname,
+            SpanAttributes.CODE_LINENO: fixturedef.func.__code__.co_firstlineno,
+            "pytest.fixture_scope": fixturedef.scope,
+            "pytest.span_type": "fixture",
+        }
+
+        with tracer.start_as_current_span(name, context=context, attributes=attributes):
+            yield
+
+    @pytest.hookimpl(hookwrapper=True)
+    def pytest_runtest_protocol(self, item: Item) -> Generator[None, None, None]:
+        context = trace.set_span_in_context(self.session_span)
+        with tracer.start_as_current_span(
+            item.name,
+            attributes=self._attributes_from_item(item),
+            context=context,
+        ):
+            yield
+
+    @pytest.hookimpl(hookwrapper=True)
+    def pytest_runtest_teardown(self, item: Item) -> Generator[None, None, None]:
+        with tracer.start_as_current_span(
+            'teardown',
+            attributes=self._attributes_from_item(item),
         ):
             yield
 
