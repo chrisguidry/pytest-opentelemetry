@@ -1,3 +1,5 @@
+from collections import Counter
+
 from _pytest.pytester import Pytester
 from opentelemetry.trace import SpanKind
 
@@ -285,17 +287,24 @@ def test_spans_within_tests_are_children_of_test_spans(
 
     test_run = spans['test run']
     test = spans['test_spans_within_tests_are_children_of_test_spans.py::test_one']
+    test_call = spans[
+        'test_spans_within_tests_are_children_of_test_spans.py::test_one::call'
+    ]
     inner = spans['inner']
 
     assert test_run.context.trace_id
     assert test.context.trace_id == test_run.context.trace_id
-    assert inner.context.trace_id == test.context.trace_id
+    assert test_call.context.trace_id == test.context.trace_id
+    assert inner.context.trace_id == test_call.context.trace_id
 
     assert test.parent
     assert test.parent.span_id == test_run.context.span_id
 
+    assert test_call.parent
+    assert test_call.parent.span_id == test.context.span_id
+
     assert inner.parent
-    assert inner.parent.span_id == test.context.span_id
+    assert inner.parent.span_id == test_call.context.span_id
 
 
 def test_spans_cover_setup_and_teardown(
@@ -341,14 +350,16 @@ def test_spans_cover_setup_and_teardown(
 
     test = spans['test_spans_cover_setup_and_teardown.py::test_one']
 
-    setup = spans['setup']
+    setup = spans['test_spans_cover_setup_and_teardown.py::test_one::setup']
     assert setup.parent.span_id == test.context.span_id
 
-    assert spans['yielded'].parent.span_id == setup.context.span_id
-    assert spans['returned'].parent.span_id == setup.context.span_id
+    assert spans['yielded setup'].parent.span_id == setup.context.span_id
+    assert spans['returned setup'].parent.span_id == setup.context.span_id
 
-    teardown = spans['teardown']
+    teardown = spans['test_spans_cover_setup_and_teardown.py::test_one::teardown']
     assert teardown.parent.span_id == test.context.span_id
+    assert spans['yielded teardown'].parent.span_id == teardown.context.span_id
+    assert spans['returned teardown'].parent.span_id == teardown.context.span_id
 
 
 def test_spans_cover_fixtures_at_different_scopes(
@@ -389,16 +400,76 @@ def test_spans_cover_fixtures_at_different_scopes(
 
     test = spans['test_spans_cover_fixtures_at_different_scopes.py::test_one']
 
-    setup = spans['setup']
+    setup = spans['test_spans_cover_fixtures_at_different_scopes.py::test_one::setup']
     assert setup.parent.span_id == test.context.span_id
 
-    session_scoped = spans['session_scoped']
-    module_scoped = spans['module_scoped']
-    function_scoped = spans['function_scoped']
+    session_scoped = spans['session_scoped setup']
+    module_scoped = spans['module_scoped setup']
+    function_scoped = spans['function_scoped setup']
 
-    assert session_scoped.parent.span_id == test_run.context.span_id
-    assert module_scoped.parent.span_id == test_run.context.span_id
+    assert session_scoped.parent.span_id == setup.context.span_id
+    assert module_scoped.parent.span_id == setup.context.span_id
     assert function_scoped.parent.span_id == setup.context.span_id
+
+
+def test_spans_from_fixutres_used_multiple_times(
+    pytester: Pytester, span_recorder: SpanRecorder
+) -> None:
+    pytester.makepyfile(
+        """
+        import pytest
+        from opentelemetry import trace
+
+        tracer = trace.get_tracer('inside')
+
+        @pytest.fixture(scope='session')
+        def session_scoped() -> int:
+            return 1
+
+        @pytest.fixture(scope='module')
+        def module_scoped() -> int:
+            return 2
+
+        @pytest.fixture(scope='function')
+        def function_scoped() -> int:
+            return 3
+
+        @pytest.fixture(scope='class')
+        def class_scoped() -> int:
+            return 4
+
+        def test_one(session_scoped: int, module_scoped: int, function_scoped: int):
+            assert session_scoped + module_scoped + function_scoped == 6
+
+        def test_two(session_scoped: int, module_scoped: int, function_scoped: int):
+            assert session_scoped + module_scoped + function_scoped == 6
+
+        class TestClass:
+            def test_a(self, class_scoped: int, session_scoped: int):
+                assert class_scoped + session_scoped == 5
+
+            def test_b(self, class_scoped: int, module_scoped: int):
+                assert class_scoped + module_scoped == 6
+
+            def test_c(self, class_scoped: int, function_scoped: int):
+                assert class_scoped + function_scoped == 7
+
+    """
+    )
+    pytester.runpytest().assert_outcomes(passed=5)
+    spans = Counter(span.name for span in span_recorder.finished_spans())
+
+    assert spans['session_scoped setup'] == 1
+    assert spans['session_scoped teardown'] == 1
+
+    assert spans['module_scoped setup'] == 1
+    assert spans['module_scoped teardown'] == 1
+
+    assert spans['class_scoped setup'] == 1
+    assert spans['class_scoped teardown'] == 1
+
+    assert spans['function_scoped setup'] == 3
+    assert spans['function_scoped teardown'] == 3
 
 
 def test_parametrized_fixture_names(
@@ -437,9 +508,13 @@ def test_parametrized_fixture_names(
     )
 
     # the stringable arguments are used in the span name
-    assert 'stringable[111]' in spans
-    assert 'stringable[222]' in spans
+    assert 'stringable[111] setup' in spans
+    assert 'stringable[111] teardown' in spans
+    assert 'stringable[222] setup' in spans
+    assert 'stringable[222] teardown' in spans
 
     # the indexes of non-stringable arguments are used in the span name
-    assert 'unstringable[0]' in spans
-    assert 'unstringable[1]' in spans
+    assert 'unstringable[0] setup' in spans
+    assert 'unstringable[0] teardown' in spans
+    assert 'unstringable[1] setup' in spans
+    assert 'unstringable[1] teardown' in spans
