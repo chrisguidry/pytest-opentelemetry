@@ -144,7 +144,7 @@ class OpenTelemetryPlugin:
     def pytest_runtest_protocol(self, item: Item) -> Generator[None, None, None]:
         context = trace.set_span_in_context(self.session_span)
         with tracer.start_as_current_span(
-            item.name,
+            item.nodeid,
             attributes=self._attributes_from_item(item),
             context=context,
         ):

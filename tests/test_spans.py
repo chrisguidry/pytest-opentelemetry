@@ -26,7 +26,7 @@ def test_simple_pytest_functions(
     assert span.attributes
     assert span.attributes["pytest.span_type"] == "run"
 
-    span = spans['test_one']
+    span = spans['test_simple_pytest_functions.py::test_one']
     assert span.kind == SpanKind.INTERNAL
     assert span.status.is_ok
     assert span.attributes
@@ -38,7 +38,7 @@ def test_simple_pytest_functions(
         span.attributes["pytest.nodeid"] == "test_simple_pytest_functions.py::test_one"
     )
 
-    span = spans['test_two']
+    span = spans['test_simple_pytest_functions.py::test_two']
     assert span.kind == SpanKind.INTERNAL
     assert span.status.is_ok
     assert span.attributes
@@ -80,10 +80,10 @@ def test_failures_and_errors(pytester: Pytester, span_recorder: SpanRecorder) ->
     span = spans['test run']
     assert not span.status.is_ok
 
-    span = spans['test_one']
+    span = spans['test_failures_and_errors.py::test_one']
     assert span.status.is_ok
 
-    span = spans['test_two']
+    span = spans['test_failures_and_errors.py::test_two']
     assert not span.status.is_ok
     assert span.attributes
     assert span.attributes['code.function'] == 'test_two'
@@ -95,7 +95,7 @@ def test_failures_and_errors(pytester: Pytester, span_recorder: SpanRecorder) ->
     assert event.attributes
     assert event.attributes['exception.type'] == 'AssertionError'
 
-    span = spans['test_three']
+    span = spans['test_failures_and_errors.py::test_three']
     assert not span.status.is_ok
     assert span.attributes
     assert span.attributes['code.function'] == 'test_three'
@@ -108,7 +108,7 @@ def test_failures_and_errors(pytester: Pytester, span_recorder: SpanRecorder) ->
     assert event.attributes['exception.type'] == 'ValueError'
     assert event.attributes['exception.message'] == 'woops'
 
-    span = spans['test_four']
+    span = spans['test_failures_and_errors.py::test_four']
     assert not span.status.is_ok
     assert span.attributes
     assert span.attributes['code.function'] == 'test_four'
@@ -152,16 +152,16 @@ def test_failures_in_fixtures(pytester: Pytester, span_recorder: SpanRecorder) -
 
     assert 'test run' in spans
 
-    span = spans['test_one']
+    span = spans['test_failures_in_fixtures.py::test_one']
     assert span.status.is_ok
 
-    span = spans['test_two']
+    span = spans['test_failures_in_fixtures.py::test_two']
     assert not span.status.is_ok
 
-    span = spans['test_three']
+    span = spans['test_failures_in_fixtures.py::test_three']
     assert not span.status.is_ok
 
-    span = spans['test_four']
+    span = spans['test_failures_in_fixtures.py::test_four']
     assert not span.status.is_ok
 
 
@@ -185,7 +185,7 @@ def test_parametrized_tests(pytester: Pytester, span_recorder: SpanRecorder) -> 
 
     assert 'test run' in spans
 
-    span = spans['test_one[world]']
+    span = spans['test_parametrized_tests.py::test_one[world]']
     assert span.status.is_ok
     assert span.attributes
     assert (
@@ -193,7 +193,7 @@ def test_parametrized_tests(pytester: Pytester, span_recorder: SpanRecorder) -> 
         == "test_parametrized_tests.py::test_one[world]"
     )
 
-    span = spans['test_one[people]']
+    span = spans['test_parametrized_tests.py::test_one[people]']
     assert span.status.is_ok
     assert span.attributes
     assert (
@@ -201,7 +201,7 @@ def test_parametrized_tests(pytester: Pytester, span_recorder: SpanRecorder) -> 
         == "test_parametrized_tests.py::test_one[people]"
     )
 
-    span = spans['test_two']
+    span = spans['test_parametrized_tests.py::test_two']
     assert span.status.is_ok
     assert span.attributes
     assert span.attributes["pytest.nodeid"] == "test_parametrized_tests.py::test_two"
@@ -225,14 +225,14 @@ def test_class_tests(pytester: Pytester, span_recorder: SpanRecorder) -> None:
 
     assert 'test run' in spans
 
-    span = spans['test_one']
+    span = spans['test_class_tests.py::TestThings::test_one']
     assert span.status.is_ok
     assert span.attributes
     assert (
         span.attributes["pytest.nodeid"] == "test_class_tests.py::TestThings::test_one"
     )
 
-    span = spans['test_two']
+    span = spans['test_class_tests.py::TestThings::test_two']
     assert span.status.is_ok
     assert span.attributes
     assert (
@@ -255,7 +255,7 @@ def test_test_spans_are_children_of_sessions(
     # assert len(spans) == 2
 
     test_run = spans['test run']
-    test = spans['test_one']
+    test = spans['test_test_spans_are_children_of_sessions.py::test_one']
 
     assert test_run.context.trace_id
     assert test.context.trace_id == test_run.context.trace_id
@@ -284,7 +284,7 @@ def test_spans_within_tests_are_children_of_test_spans(
     # assert len(spans) == 3
 
     test_run = spans['test run']
-    test = spans['test_one']
+    test = spans['test_spans_within_tests_are_children_of_test_spans.py::test_one']
     inner = spans['inner']
 
     assert test_run.context.trace_id
@@ -339,7 +339,7 @@ def test_spans_cover_setup_and_teardown(
         span.context.trace_id == test_run.context.trace_id for span in spans.values()
     )
 
-    test = spans['test_one']
+    test = spans['test_spans_cover_setup_and_teardown.py::test_one']
 
     setup = spans['setup']
     assert setup.parent.span_id == test.context.span_id
@@ -387,7 +387,7 @@ def test_spans_cover_fixtures_at_different_scopes(
         span.context.trace_id == test_run.context.trace_id for span in spans.values()
     )
 
-    test = spans['test_one']
+    test = spans['test_spans_cover_fixtures_at_different_scopes.py::test_one']
 
     setup = spans['setup']
     assert setup.parent.span_id == test.context.span_id
