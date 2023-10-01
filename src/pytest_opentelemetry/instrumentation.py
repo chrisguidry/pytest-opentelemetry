@@ -3,7 +3,7 @@ from typing import Any, Dict, Generator, Optional, Union
 
 import pytest
 from _pytest.config import Config
-from _pytest.fixtures import FixtureDef, SubRequest
+from _pytest.fixtures import FixtureDef, FixtureRequest, SubRequest
 from _pytest.main import Session
 from _pytest.nodes import Item, Node
 from _pytest.reports import TestReport
@@ -103,33 +103,27 @@ class OpenTelemetryPlugin:
         return attributes
 
     @pytest.hookimpl(hookwrapper=True)
-    def pytest_runtest_setup(self, item: Item) -> Generator[None, None, None]:
+    def pytest_runtest_protocol(self, item: Item) -> Generator[None, None, None]:
+        context = trace.set_span_in_context(self.session_span)
         with tracer.start_as_current_span(
-            'setup',
+            item.nodeid,
             attributes=self._attributes_from_item(item),
+            context=context,
         ):
             yield
 
     @pytest.hookimpl(hookwrapper=True)
-    def pytest_fixture_setup(
-        self, fixturedef: FixtureDef, request: pytest.FixtureRequest
-    ) -> Generator[None, None, None]:
-        context: Context = None
-        if fixturedef.scope != 'function':
-            context = trace.set_span_in_context(self.session_span)
+    def pytest_runtest_setup(self, item: Item) -> Generator[None, None, None]:
+        with tracer.start_as_current_span(
+            f'{item.nodeid}::setup',
+            attributes=self._attributes_from_item(item),
+        ):
+            yield
 
-        if fixturedef.params and 'request' in fixturedef.argnames:
-            try:
-                parameter = str(request.param)
-            except Exception:
-                parameter = str(
-                    request.param_index if isinstance(request, SubRequest) else '?'
-                )
-            name = f"{fixturedef.argname}[{parameter}]"
-        else:
-            name = fixturedef.argname
-
-        attributes: Dict[str, Union[str, int]] = {
+    def _attributes_from_fixturedef(
+        self, fixturedef: FixtureDef
+    ) -> Dict[str, Union[str, int]]:
+        return {
             SpanAttributes.CODE_FILEPATH: fixturedef.func.__code__.co_filename,
             SpanAttributes.CODE_FUNCTION: fixturedef.argname,
             SpanAttributes.CODE_LINENO: fixturedef.func.__code__.co_firstlineno,
@@ -137,26 +131,90 @@ class OpenTelemetryPlugin:
             "pytest.span_type": "fixture",
         }
 
-        with tracer.start_as_current_span(name, context=context, attributes=attributes):
+    def _name_from_fixturedef(self, fixturedef: FixtureDef, request: FixtureRequest):
+        if fixturedef.params and 'request' in fixturedef.argnames:
+            try:
+                parameter = str(request.param)
+            except Exception:
+                parameter = str(
+                    request.param_index if isinstance(request, SubRequest) else '?'
+                )
+            return f"{fixturedef.argname}[{parameter}]"
+        return fixturedef.argname
+
+    @pytest.hookimpl(hookwrapper=True)
+    def pytest_fixture_setup(
+        self, fixturedef: FixtureDef, request: FixtureRequest
+    ) -> Generator[None, None, None]:
+        with tracer.start_as_current_span(
+            name=f'{self._name_from_fixturedef(fixturedef, request)} setup',
+            attributes=self._attributes_from_fixturedef(fixturedef),
+        ):
             yield
 
     @pytest.hookimpl(hookwrapper=True)
-    def pytest_runtest_protocol(self, item: Item) -> Generator[None, None, None]:
-        context = trace.set_span_in_context(self.session_span)
+    def pytest_runtest_call(self, item: Item) -> Generator[None, None, None]:
         with tracer.start_as_current_span(
-            item.name,
+            name=f'{item.nodeid}::call',
             attributes=self._attributes_from_item(item),
-            context=context,
         ):
             yield
 
     @pytest.hookimpl(hookwrapper=True)
     def pytest_runtest_teardown(self, item: Item) -> Generator[None, None, None]:
         with tracer.start_as_current_span(
-            'teardown',
+            name=f'{item.nodeid}::teardown',
             attributes=self._attributes_from_item(item),
         ):
+            # Since there is no pytest_fixture_teardown hook, we have to be a
+            # little clever to capture the spans for each fixture's teardown.
+            # The pytest_fixture_post_finalizer hook is called at the end of a
+            # fixture's teardown, but we don't know when the fixture actually
+            # began tearing down.
+            #
+            # Instead start a span here for the first fixture to be torn down,
+            # but give it a temporary name, since we don't know which fixture it
+            # will be. Then, in pytest_fixture_post_finalizer, when we do know
+            # which fixture is being torn down, update the name and attributes
+            # to the actual fixture, end the span, and create the span for the
+            # next fixture in line to be torn down.
+            self._fixture_teardown_span = tracer.start_span("fixture teardown")
             yield
+
+        # The last call to pytest_fixture_post_finalizer will create
+        # a span that is unneeded, so delete it.
+        del self._fixture_teardown_span
+
+    @pytest.hookimpl(hookwrapper=True)
+    def pytest_fixture_post_finalizer(
+        self, fixturedef: FixtureDef, request: SubRequest
+    ) -> Generator[None, None, None]:
+        """When the span for a fixture teardown is created by
+        pytest_runtest_teardown or a previous pytest_fixture_post_finalizer, we
+        need to update the name and attributes now that we know which fixture it
+        was for."""
+
+        # If the fixture has already been torn down, then it will have no cached
+        # result, so we can skip this one.
+        if fixturedef.cached_result is None:
+            yield
+        # Passing `-x` option to pytest can cause it to exit early so it may not
+        # have this span attribute.
+        elif not hasattr(self, "_fixture_teardown_span"):  # pragma: no cover
+            yield
+        else:
+            # If we've gotten here, we have a real fixture about to be torn down.
+            name = f'{self._name_from_fixturedef(fixturedef, request)} teardown'
+            self._fixture_teardown_span.update_name(name)
+            attributes = self._attributes_from_fixturedef(fixturedef)
+            self._fixture_teardown_span.set_attributes(attributes)
+            yield
+            self._fixture_teardown_span.end()
+
+        # Create the span for the next fixture to be torn down. When there are
+        # no more fixtures remaining, this will be an empty, useless span, so it
+        # needs to be deleted by pytest_runtest_teardown.
+        self._fixture_teardown_span = tracer.start_span("fixture teardown")
 
     @staticmethod
     def pytest_exception_interact(
