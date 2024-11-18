@@ -1,7 +1,9 @@
 import os
 import re
+import subprocess
 import tempfile
 from typing import Generator
+from unittest.mock import patch
 
 import pytest
 from opentelemetry.sdk.resources import Resource
@@ -35,19 +37,26 @@ def test_service_version_unknown(bare_codebase: str, resource: Resource) -> None
     assert resource.attributes['service.version'] == '[unknown: not a git repository]'
 
 
-@pytest.fixture
-def broken_repo(bare_codebase: str) -> str:
-    # making an empty .git directory will get us past the first check, but then
-    # `git rev-parse HEAD` will fail
-    os.makedirs('.git')
-    return bare_codebase
-
-
-def test_service_version_git_problems(broken_repo: str, resource: Resource) -> None:
-    assert resource.attributes['service.version'] == (
-        "[unknown: Command '['git', 'rev-parse', 'HEAD']' "
-        "returned non-zero exit status 128.]"
-    )
+def test_service_version_git_problems() -> None:
+    with patch(
+        'pytest_opentelemetry.resource.subprocess.check_output',
+        side_effect=[
+            b'true',
+            subprocess.CalledProcessError(128, ['git', 'rev-parse', 'HEAD']),
+        ],
+    ):
+        resource = CodebaseResourceDetector().detect()
+        assert resource.attributes['service.version'] == (
+            "[unknown: Command '['git', 'rev-parse', 'HEAD']' "
+            "returned non-zero exit status 128.]"
+        )
+    with patch(
+        'pytest_opentelemetry.resource.subprocess.check_output', side_effect=[b'false']
+    ):
+        resource = CodebaseResourceDetector().detect()
+        assert resource.attributes['service.version'] == (
+            "[unknown: not a git repository]"
+        )
 
 
 @pytest.fixture

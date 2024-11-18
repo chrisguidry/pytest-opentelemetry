@@ -20,7 +20,13 @@ class CodebaseResourceDetector(ResourceDetector):
 
     @staticmethod
     def get_codebase_version() -> str:
-        if not os.path.exists('.git'):
+        try:
+            response = subprocess.check_output(
+                ['git', 'rev-parse', '--is-inside-work-tree']
+            )
+            if response.strip() != b'true':
+                return '[unknown: not a git repository]'
+        except Exception:  # pylint: disable=broad-except
             return '[unknown: not a git repository]'
 
         try:
