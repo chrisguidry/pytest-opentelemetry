@@ -3,7 +3,7 @@ import re
 import subprocess
 import tempfile
 from typing import Generator
-from unittest.mock import patch
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 from opentelemetry.sdk.resources import Resource
@@ -26,11 +26,27 @@ def bare_codebase() -> Generator[str, None, None]:
 
 @pytest.fixture
 def resource() -> Resource:
-    return CodebaseResourceDetector().detect()
+    return CodebaseResourceDetector(Mock()).detect()
 
 
-def test_service_name_from_directory(bare_codebase: str, resource: Resource) -> None:
-    assert resource.attributes['service.name'] == 'my-project'
+def test_get_codebase_name() -> None:
+    config = MagicMock()
+    config.inicfg = {'junit_suite_name': 'my-project'}
+    config.rootpath.name = None
+    config.getoption.return_value = None
+    assert CodebaseResourceDetector(config).get_codebase_name() == 'my-project'
+
+    config = MagicMock()
+    config.inicfg = {}
+    config.rootpath.name = None
+    config.getoption.return_value = 'my-project'
+    assert CodebaseResourceDetector(config).get_codebase_name() == 'my-project'
+
+    config = MagicMock()
+    config.inicfg = {}
+    config.rootpath.name = 'my-project'
+    config.getoption.return_value = None
+    assert CodebaseResourceDetector(config).get_codebase_name() == 'my-project'
 
 
 def test_service_version_unknown(bare_codebase: str, resource: Resource) -> None:
@@ -45,7 +61,7 @@ def test_service_version_git_problems() -> None:
             subprocess.CalledProcessError(128, ['git', 'rev-parse', 'HEAD']),
         ],
     ):
-        resource = CodebaseResourceDetector().detect()
+        resource = CodebaseResourceDetector(Mock()).detect()
         assert resource.attributes['service.version'] == (
             "[unknown: Command '['git', 'rev-parse', 'HEAD']' "
             "returned non-zero exit status 128.]"
@@ -53,7 +69,7 @@ def test_service_version_git_problems() -> None:
     with patch(
         'pytest_opentelemetry.resource.subprocess.check_output', side_effect=[b'false']
     ):
-        resource = CodebaseResourceDetector().detect()
+        resource = CodebaseResourceDetector(Mock()).detect()
         assert resource.attributes['service.version'] == (
             "[unknown: not a git repository]"
         )
