@@ -67,7 +67,7 @@ class OpenTelemetryPlugin:
             OpenTelemetryContainerDistro().configure()
 
         configurator = OpenTelemetryContainerConfigurator()
-        configurator.resource_detectors.append(CodebaseResourceDetector())
+        configurator.resource_detectors.append(CodebaseResourceDetector(config))
         configurator.resource_detectors.append(OTELResourceDetector())
         configurator.configure()
 
