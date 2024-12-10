@@ -20,8 +20,6 @@ from opentelemetry_container_distro import (
 
 from .resource import CodebaseResourceDetector
 
-tracer = trace.get_tracer('pytest-opentelemetry')
-
 
 class OpenTelemetryPlugin:
     """A pytest plugin which produces OpenTelemetry spans around test sessions and
@@ -71,8 +69,10 @@ class OpenTelemetryPlugin:
         configurator.resource_detectors.append(OTELResourceDetector())
         configurator.configure()
 
+        self.tracer = trace.get_tracer("pytest-opentelemetry")
+
     def pytest_sessionstart(self, session: Session) -> None:
-        self.session_span = tracer.start_span(
+        self.session_span = self.tracer.start_span(
             self.session_name,
             context=self.trace_parent,
             attributes={
@@ -105,7 +105,7 @@ class OpenTelemetryPlugin:
     @pytest.hookimpl(hookwrapper=True)
     def pytest_runtest_protocol(self, item: Item) -> Generator[None, None, None]:
         context = trace.set_span_in_context(self.session_span)
-        with tracer.start_as_current_span(
+        with self.tracer.start_as_current_span(
             item.nodeid,
             attributes=self._attributes_from_item(item),
             context=context,
@@ -114,7 +114,7 @@ class OpenTelemetryPlugin:
 
     @pytest.hookimpl(hookwrapper=True)
     def pytest_runtest_setup(self, item: Item) -> Generator[None, None, None]:
-        with tracer.start_as_current_span(
+        with self.tracer.start_as_current_span(
             f'{item.nodeid}::setup',
             attributes=self._attributes_from_item(item),
         ):
@@ -146,7 +146,7 @@ class OpenTelemetryPlugin:
     def pytest_fixture_setup(
         self, fixturedef: FixtureDef, request: FixtureRequest
     ) -> Generator[None, None, None]:
-        with tracer.start_as_current_span(
+        with self.tracer.start_as_current_span(
             name=f'{self._name_from_fixturedef(fixturedef, request)} setup',
             attributes=self._attributes_from_fixturedef(fixturedef),
         ):
@@ -154,7 +154,7 @@ class OpenTelemetryPlugin:
 
     @pytest.hookimpl(hookwrapper=True)
     def pytest_runtest_call(self, item: Item) -> Generator[None, None, None]:
-        with tracer.start_as_current_span(
+        with self.tracer.start_as_current_span(
             name=f'{item.nodeid}::call',
             attributes=self._attributes_from_item(item),
         ):
@@ -162,7 +162,7 @@ class OpenTelemetryPlugin:
 
     @pytest.hookimpl(hookwrapper=True)
     def pytest_runtest_teardown(self, item: Item) -> Generator[None, None, None]:
-        with tracer.start_as_current_span(
+        with self.tracer.start_as_current_span(
             name=f'{item.nodeid}::teardown',
             attributes=self._attributes_from_item(item),
         ):
@@ -178,7 +178,7 @@ class OpenTelemetryPlugin:
             # which fixture is being torn down, update the name and attributes
             # to the actual fixture, end the span, and create the span for the
             # next fixture in line to be torn down.
-            self._fixture_teardown_span = tracer.start_span("fixture teardown")
+            self._fixture_teardown_span = self.tracer.start_span("fixture teardown")
             yield
 
         # The last call to pytest_fixture_post_finalizer will create
@@ -214,7 +214,7 @@ class OpenTelemetryPlugin:
         # Create the span for the next fixture to be torn down. When there are
         # no more fixtures remaining, this will be an empty, useless span, so it
         # needs to be deleted by pytest_runtest_teardown.
-        self._fixture_teardown_span = tracer.start_span("fixture teardown")
+        self._fixture_teardown_span = self.tracer.start_span("fixture teardown")
 
     @staticmethod
     def pytest_exception_interact(
