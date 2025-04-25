@@ -1,5 +1,7 @@
 from collections import Counter
+from typing import List
 
+import pytest
 from _pytest.pytester import Pytester
 from opentelemetry.trace import SpanKind
 
@@ -412,8 +414,17 @@ def test_spans_cover_fixtures_at_different_scopes(
     assert function_scoped.parent.span_id == setup.context.span_id
 
 
+@pytest.mark.parametrize(
+    'args',
+    [
+        pytest.param([], id='trace-per-suite'),
+        pytest.param(['--trace-per-test'], id='trace-per-test'),
+    ],
+)
 def test_spans_from_fixutres_used_multiple_times(
-    pytester: Pytester, span_recorder: SpanRecorder
+    pytester: Pytester,
+    span_recorder: SpanRecorder,
+    args: List[str],
 ) -> None:
     pytester.makepyfile(
         """
@@ -456,7 +467,7 @@ def test_spans_from_fixutres_used_multiple_times(
 
     """
     )
-    pytester.runpytest().assert_outcomes(passed=5)
+    pytester.runpytest(*args).assert_outcomes(passed=5)
     spans = Counter(span.name for span in span_recorder.finished_spans())
 
     assert spans['session_scoped setup'] == 1
