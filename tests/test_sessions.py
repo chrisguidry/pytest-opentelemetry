@@ -1,13 +1,15 @@
 import os
 from contextlib import contextmanager
-from typing import Dict, Generator, Optional
+from typing import Dict, Generator, List, Optional
 from unittest.mock import Mock, patch
 
+import pytest
 from _pytest.pytester import Pytester
 from opentelemetry import trace
 
 from pytest_opentelemetry.instrumentation import (
     OpenTelemetryPlugin,
+    PerTestOpenTelemetryPlugin,
     XdistOpenTelemetryPlugin,
 )
 
@@ -187,13 +189,50 @@ def test_works_without_xdist(pytester: Pytester, span_recorder: SpanRecorder) ->
     result.assert_outcomes(passed=2)
 
 
+@pytest.mark.parametrize(
+    'args',
+    [
+        pytest.param([], id="default"),
+        pytest.param(['-n', '2'], id="xdist"),
+        pytest.param(['-p', 'no:xdist'], id='no:xdist'),
+    ],
+)
+def test_trace_per_test(
+    pytester: Pytester, span_recorder: SpanRecorder, args: List[str]
+) -> None:
+    pytester.makepyfile(
+        """
+        from opentelemetry import trace
+
+        def test_one():
+            span = trace.get_current_span()
+            assert span.context.trace_id == 0x1234567890abcdef1234567890abcdef
+
+        def test_two():
+            span = trace.get_current_span()
+            assert span.context.trace_id == 0x1234567890abcdef1234567890abcdef
+    """
+    )
+    result = pytester.runpytest_subprocess(
+        '--trace-per-test',
+        *args,
+        '--trace-parent',
+        '00-1234567890abcdef1234567890abcdef-fedcba0987654321-01',
+    )
+    result.assert_outcomes(passed=2)
+
+
 @patch.object(trace, 'get_tracer_provider')
 def test_force_flush_with_supported_provider(mock_get_tracer_provider):
     provider = Mock()
     provider.force_flush = Mock(return_value=None)
     mock_get_tracer_provider.return_value = provider
 
-    for plugin in OpenTelemetryPlugin, XdistOpenTelemetryPlugin:
+    for plugin in (
+        OpenTelemetryPlugin,
+        XdistOpenTelemetryPlugin,
+        PerTestOpenTelemetryPlugin,
+    ):
         assert plugin.try_force_flush() is True
 
 
@@ -202,5 +241,9 @@ def test_force_flush_with_unsupported_provider(mock_get_tracer_provider):
     provider = Mock(spec=trace.ProxyTracerProvider)
     mock_get_tracer_provider.return_value = provider
 
-    for plugin in OpenTelemetryPlugin, XdistOpenTelemetryPlugin:
+    for plugin in (
+        OpenTelemetryPlugin,
+        XdistOpenTelemetryPlugin,
+        PerTestOpenTelemetryPlugin,
+    ):
         assert plugin.try_force_flush() is False
