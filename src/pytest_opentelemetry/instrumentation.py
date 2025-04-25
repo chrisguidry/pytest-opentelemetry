@@ -1,5 +1,5 @@
 import os
-from typing import Any, Dict, Generator, Optional, Union
+from typing import Any, Dict, Iterator, Optional, Union
 
 import pytest
 from _pytest.config import Config
@@ -23,20 +23,12 @@ from .resource import CodebaseResourceDetector
 tracer = trace.get_tracer('pytest-opentelemetry')
 
 
-class OpenTelemetryPlugin:
-    """A pytest plugin which produces OpenTelemetry spans around test sessions and
-    individual test runs."""
+class PerTestOpenTelemetryPlugin:
+    """base logic for all otel pytest integration"""
 
     @property
-    def session_name(self):
-        # Lazy initialise session name
-        if not hasattr(self, '_session_name'):
-            self._session_name = os.environ.get('PYTEST_RUN_NAME', 'test run')
-        return self._session_name
-
-    @session_name.setter
-    def session_name(self, name):
-        self._session_name = name
+    def item_parent(self) -> Union[str, None]:
+        return self.trace_parent
 
     @classmethod
     def get_trace_parent(cls, config: Config) -> Optional[Context]:
@@ -71,22 +63,7 @@ class OpenTelemetryPlugin:
         configurator.resource_detectors.append(OTELResourceDetector())
         configurator.configure()
 
-    def pytest_sessionstart(self, session: Session) -> None:
-        self.session_span = tracer.start_span(
-            self.session_name,
-            context=self.trace_parent,
-            attributes={
-                "pytest.span_type": "run",
-            },
-        )
-        self.has_error = False
-
     def pytest_sessionfinish(self, session: Session) -> None:
-        self.session_span.set_status(
-            StatusCode.ERROR if self.has_error else StatusCode.OK
-        )
-
-        self.session_span.end()
         self.try_force_flush()
 
     def _attributes_from_item(self, item: Item) -> Dict[str, Union[str, int]]:
@@ -103,17 +80,16 @@ class OpenTelemetryPlugin:
         return attributes
 
     @pytest.hookimpl(hookwrapper=True)
-    def pytest_runtest_protocol(self, item: Item) -> Generator[None, None, None]:
-        context = trace.set_span_in_context(self.session_span)
+    def pytest_runtest_protocol(self, item: Item) -> Iterator[None]:
         with tracer.start_as_current_span(
             item.nodeid,
             attributes=self._attributes_from_item(item),
-            context=context,
+            context=self.item_parent,
         ):
             yield
 
     @pytest.hookimpl(hookwrapper=True)
-    def pytest_runtest_setup(self, item: Item) -> Generator[None, None, None]:
+    def pytest_runtest_setup(self, item: Item) -> Iterator[None]:
         with tracer.start_as_current_span(
             f'{item.nodeid}::setup',
             attributes=self._attributes_from_item(item),
@@ -145,7 +121,7 @@ class OpenTelemetryPlugin:
     @pytest.hookimpl(hookwrapper=True)
     def pytest_fixture_setup(
         self, fixturedef: FixtureDef, request: FixtureRequest
-    ) -> Generator[None, None, None]:
+    ) -> Iterator[None]:
         with tracer.start_as_current_span(
             name=f'{self._name_from_fixturedef(fixturedef, request)} setup',
             attributes=self._attributes_from_fixturedef(fixturedef),
@@ -153,7 +129,7 @@ class OpenTelemetryPlugin:
             yield
 
     @pytest.hookimpl(hookwrapper=True)
-    def pytest_runtest_call(self, item: Item) -> Generator[None, None, None]:
+    def pytest_runtest_call(self, item: Item) -> Iterator[None]:
         with tracer.start_as_current_span(
             name=f'{item.nodeid}::call',
             attributes=self._attributes_from_item(item),
@@ -161,7 +137,7 @@ class OpenTelemetryPlugin:
             yield
 
     @pytest.hookimpl(hookwrapper=True)
-    def pytest_runtest_teardown(self, item: Item) -> Generator[None, None, None]:
+    def pytest_runtest_teardown(self, item: Item) -> Iterator[None]:
         with tracer.start_as_current_span(
             name=f'{item.nodeid}::teardown',
             attributes=self._attributes_from_item(item),
@@ -188,7 +164,7 @@ class OpenTelemetryPlugin:
     @pytest.hookimpl(hookwrapper=True)
     def pytest_fixture_post_finalizer(
         self, fixturedef: FixtureDef, request: SubRequest
-    ) -> Generator[None, None, None]:
+    ) -> Iterator[None]:
         """When the span for a fixture teardown is created by
         pytest_runtest_teardown or a previous pytest_fixture_post_finalizer, we
         need to update the name and attributes now that we know which fixture it
@@ -250,8 +226,50 @@ class OpenTelemetryPlugin:
 
         has_error = report.outcome == 'failed'
         status_code = StatusCode.ERROR if has_error else StatusCode.OK
-        self.has_error |= has_error
         trace.get_current_span().set_status(status_code)
+
+
+class OpenTelemetryPlugin(PerTestOpenTelemetryPlugin):
+    """A pytest plugin which produces OpenTelemetry spans around test sessions and
+    individual test runs."""
+
+    @property
+    def session_name(self):
+        # Lazy initialise session name
+        if not hasattr(self, '_session_name'):
+            self._session_name = os.environ.get('PYTEST_RUN_NAME', 'test run')
+        return self._session_name
+
+    @session_name.setter
+    def session_name(self, name):
+        self._session_name = name
+
+    @property
+    def item_parent(self) -> Union[str, None]:
+        context = trace.set_span_in_context(self.session_span)
+        return context
+
+    def pytest_sessionstart(self, session: Session) -> None:
+        self.session_span = tracer.start_span(
+            self.session_name,
+            context=self.trace_parent,
+            attributes={
+                "pytest.span_type": "run",
+            },
+        )
+        self.has_error = False
+
+    def pytest_sessionfinish(self, session: Session) -> None:
+        self.session_span.set_status(
+            StatusCode.ERROR if self.has_error else StatusCode.OK
+        )
+
+        self.session_span.end()
+        super().pytest_sessionfinish(session)
+
+    def pytest_runtest_logreport(self, report: TestReport) -> None:
+        super().pytest_runtest_logreport(report)
+        self.has_error |= report.when == 'call' and report.outcome == 'failed'
 
 
 try:

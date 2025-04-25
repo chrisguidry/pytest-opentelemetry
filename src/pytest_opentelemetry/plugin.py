@@ -26,16 +26,25 @@ def pytest_addoption(parser: Parser) -> None:
             'trace.  If it is omitted, this test run will start a new trace.'
         ),
     )
+    group.addoption(
+        "--trace-per-test",
+        action="store_true",
+        default=False,
+        help="Creates a separate trace per test instead of a trace for the test run",
+    )
 
 
 def pytest_configure(config: Config) -> None:
     # pylint: disable=import-outside-toplevel
     from pytest_opentelemetry.instrumentation import (
         OpenTelemetryPlugin,
+        PerTestOpenTelemetryPlugin,
         XdistOpenTelemetryPlugin,
     )
 
-    if config.pluginmanager.has_plugin("xdist"):
+    if config.getvalue('--trace-per-test'):
+        config.pluginmanager.register(PerTestOpenTelemetryPlugin())
+    elif config.pluginmanager.has_plugin("xdist"):
         config.pluginmanager.register(XdistOpenTelemetryPlugin())
     else:
         config.pluginmanager.register(OpenTelemetryPlugin())
