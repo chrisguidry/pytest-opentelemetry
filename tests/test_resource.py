@@ -29,23 +29,33 @@ def resource() -> Resource:
     return CodebaseResourceDetector(Mock()).detect()
 
 
-def test_get_codebase_name() -> None:
+@pytest.fixture
+def config() -> MagicMock:
     config = MagicMock()
-    config.inicfg = {'junit_suite_name': 'my-project'}
-    config.rootpath.name = None
+    config.getini.return_value = ''
     config.getoption.return_value = None
+    config.rootpath.name = None
+    return config
+
+
+def test_codebase_name_from_suite_name(config: MagicMock) -> None:
+    config.getini.return_value = 'my-project'
     assert CodebaseResourceDetector(config).get_codebase_name() == 'my-project'
 
-    config = MagicMock()
-    config.inicfg = {}
-    config.rootpath.name = None
+
+def test_codebase_name_from_junit_prefix(config: MagicMock) -> None:
     config.getoption.return_value = 'my-project'
     assert CodebaseResourceDetector(config).get_codebase_name() == 'my-project'
 
-    config = MagicMock()
-    config.inicfg = {}
+
+def test_codebase_name_from_root_path(config: MagicMock) -> None:
     config.rootpath.name = 'my-project'
-    config.getoption.return_value = None
+    assert CodebaseResourceDetector(config).get_codebase_name() == 'my-project'
+
+
+def test_codebase_name_without_the_junitxml_plugin(config: MagicMock) -> None:
+    config.getini.side_effect = ValueError('unknown configuration value')
+    config.rootpath.name = 'my-project'
     assert CodebaseResourceDetector(config).get_codebase_name() == 'my-project'
 
 

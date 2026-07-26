@@ -16,6 +16,14 @@ class CodebaseResourceDetector(ResourceDetector):
         self.config = config
         ResourceDetector.__init__(self)
 
+    def get_suite_name(self) -> str:
+        """Get the junit_suite_name setting, which is only available while the
+        junitxml plugin is enabled"""
+        try:
+            return str(self.config.getini('junit_suite_name'))
+        except ValueError:
+            return ''
+
     def get_codebase_name(self) -> str:
         """Get the name of the codebase.
 
@@ -25,7 +33,7 @@ class CodebaseResourceDetector(ResourceDetector):
         rootpath: Guaranteed to exist, the reference used to construct nodeid
         """
         return str(
-            self.config.inicfg.get('junit_suite_name')
+            self.get_suite_name()
             or self.config.getoption("--junitprefix", None)
             or self.config.rootpath.name
         )
