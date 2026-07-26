@@ -26,4 +26,5 @@ jobs:
     - run: python -m build
     - run: pip install -e '.[dev]'
     - run: pytest
-    - run: pre-commit run --all-files
+    - if: matrix.python-version == '3.11'
+      run: pre-commit run --all-files
