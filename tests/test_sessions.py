@@ -109,8 +109,7 @@ def test_getting_trace_id_from_worker_input(pytester: Pytester) -> None:
 
 
 def test_passing_trace_id(pytester: Pytester, span_recorder: SpanRecorder) -> None:
-    pytester.makepyfile(
-        """
+    pytester.makepyfile("""
         from opentelemetry import trace
 
         def test_one(worker_id):
@@ -128,8 +127,7 @@ def test_passing_trace_id(pytester: Pytester, span_recorder: SpanRecorder) -> No
             span = trace.get_current_span()
             assert span.context.trace_id == 0x1234567890abcdef1234567890abcdef
             assert span.context.span_id != 0xfedcba0987654321
-    """
-    )
+    """)
     result = pytester.runpytest_subprocess(
         '--trace-parent',
         '00-1234567890abcdef1234567890abcdef-fedcba0987654321-01',
@@ -138,8 +136,7 @@ def test_passing_trace_id(pytester: Pytester, span_recorder: SpanRecorder) -> No
 
 
 def test_multiple_workers(pytester: Pytester, span_recorder: SpanRecorder) -> None:
-    pytester.makepyfile(
-        """
+    pytester.makepyfile("""
         from opentelemetry import trace
 
         def test_one(worker_id):
@@ -155,8 +152,7 @@ def test_multiple_workers(pytester: Pytester, span_recorder: SpanRecorder) -> No
 
             span = trace.get_current_span()
             assert span.context.trace_id == 0x1234567890abcdef1234567890abcdef
-    """
-    )
+    """)
     result = pytester.runpytest_subprocess(
         '-n',
         '2',
@@ -167,8 +163,7 @@ def test_multiple_workers(pytester: Pytester, span_recorder: SpanRecorder) -> No
 
 
 def test_works_without_xdist(pytester: Pytester, span_recorder: SpanRecorder) -> None:
-    pytester.makepyfile(
-        """
+    pytester.makepyfile("""
         from opentelemetry import trace
 
         def test_one():
@@ -178,8 +173,7 @@ def test_works_without_xdist(pytester: Pytester, span_recorder: SpanRecorder) ->
         def test_two():
             span = trace.get_current_span()
             assert span.context.trace_id == 0x1234567890abcdef1234567890abcdef
-    """
-    )
+    """)
     result = pytester.runpytest_subprocess(
         '-p',
         'no:xdist',
@@ -200,8 +194,7 @@ def test_works_without_xdist(pytester: Pytester, span_recorder: SpanRecorder) ->
 def test_trace_per_test(
     pytester: Pytester, span_recorder: SpanRecorder, args: List[str]
 ) -> None:
-    pytester.makepyfile(
-        """
+    pytester.makepyfile("""
         from opentelemetry import trace
 
         def test_one():
@@ -211,8 +204,7 @@ def test_trace_per_test(
         def test_two():
             span = trace.get_current_span()
             assert span.context.trace_id == 0x1234567890abcdef1234567890abcdef
-    """
-    )
+    """)
     result = pytester.runpytest_subprocess(
         '--trace-per-test',
         *args,

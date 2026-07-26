@@ -11,15 +11,13 @@ from . import SpanRecorder
 def test_simple_pytest_functions(
     pytester: Pytester, span_recorder: SpanRecorder
 ) -> None:
-    pytester.makepyfile(
-        """
+    pytester.makepyfile("""
         def test_one():
             assert 1 + 2 == 3
 
         def test_two():
             assert 2 + 2 == 4
-    """
-    )
+    """)
     pytester.runpytest().assert_outcomes(passed=2)
 
     spans = span_recorder.spans_by_name()
@@ -56,8 +54,7 @@ def test_simple_pytest_functions(
 
 
 def test_failures_and_errors(pytester: Pytester, span_recorder: SpanRecorder) -> None:
-    pytester.makepyfile(
-        """
+    pytester.makepyfile("""
         import pytest
 
         def test_one():
@@ -73,8 +70,7 @@ def test_failures_and_errors(pytester: Pytester, span_recorder: SpanRecorder) ->
             # Test did not raise case
             with pytest.raises(ValueError):
                 pass
-    """
-    )
+    """)
     result = pytester.runpytest()
     result.assert_outcomes(passed=1, failed=3)
 
@@ -131,8 +127,7 @@ def test_failures_and_errors(pytester: Pytester, span_recorder: SpanRecorder) ->
 
 
 def test_failures_in_fixtures(pytester: Pytester, span_recorder: SpanRecorder) -> None:
-    pytester.makepyfile(
-        """
+    pytester.makepyfile("""
         import pytest
 
         @pytest.fixture
@@ -150,8 +145,7 @@ def test_failures_in_fixtures(pytester: Pytester, span_recorder: SpanRecorder) -
 
         def test_four():
             assert 2 + 2 == 5
-    """
-    )
+    """)
     result = pytester.runpytest()
     result.assert_outcomes(passed=1, failed=1, errors=2)
 
@@ -174,8 +168,7 @@ def test_failures_in_fixtures(pytester: Pytester, span_recorder: SpanRecorder) -
 
 
 def test_parametrized_tests(pytester: Pytester, span_recorder: SpanRecorder) -> None:
-    pytester.makepyfile(
-        """
+    pytester.makepyfile("""
         import pytest
 
         @pytest.mark.parametrize('hello', ['world', 'people'])
@@ -184,8 +177,7 @@ def test_parametrized_tests(pytester: Pytester, span_recorder: SpanRecorder) -> 
 
         def test_two():
             assert 2 + 2 == 4
-    """
-    )
+    """)
     pytester.runpytest().assert_outcomes(passed=3)
 
     spans = span_recorder.spans_by_name()
@@ -216,16 +208,14 @@ def test_parametrized_tests(pytester: Pytester, span_recorder: SpanRecorder) -> 
 
 
 def test_class_tests(pytester: Pytester, span_recorder: SpanRecorder) -> None:
-    pytester.makepyfile(
-        """
+    pytester.makepyfile("""
         class TestThings:
             def test_one(self):
                 assert 1 + 2 == 3
 
             def test_two(self):
                 assert 2 + 2 == 4
-    """
-    )
+    """)
     pytester.runpytest().assert_outcomes(passed=2)
 
     spans = span_recorder.spans_by_name()
@@ -251,12 +241,10 @@ def test_class_tests(pytester: Pytester, span_recorder: SpanRecorder) -> None:
 def test_test_spans_are_children_of_sessions(
     pytester: Pytester, span_recorder: SpanRecorder
 ) -> None:
-    pytester.makepyfile(
-        """
+    pytester.makepyfile("""
         def test_one():
             assert 1 + 2 == 3
-    """
-    )
+    """)
     pytester.runpytest().assert_outcomes(passed=1)
 
     spans = span_recorder.spans_by_name()
@@ -275,8 +263,7 @@ def test_test_spans_are_children_of_sessions(
 def test_spans_within_tests_are_children_of_test_spans(
     pytester: Pytester, span_recorder: SpanRecorder
 ) -> None:
-    pytester.makepyfile(
-        """
+    pytester.makepyfile("""
         from opentelemetry import trace
 
         tracer = trace.get_tracer('inside')
@@ -284,8 +271,7 @@ def test_spans_within_tests_are_children_of_test_spans(
         def test_one():
             with tracer.start_as_current_span('inner'):
                 assert 1 + 2 == 3
-    """
-    )
+    """)
     pytester.runpytest().assert_outcomes(passed=1)
 
     spans = span_recorder.spans_by_name()
@@ -316,8 +302,7 @@ def test_spans_within_tests_are_children_of_test_spans(
 def test_spans_cover_setup_and_teardown(
     pytester: Pytester, span_recorder: SpanRecorder
 ) -> None:
-    pytester.makepyfile(
-        """
+    pytester.makepyfile("""
         import pytest
         from opentelemetry import trace
 
@@ -342,8 +327,7 @@ def test_spans_cover_setup_and_teardown(
         def test_one(yielded: int, returned: int):
             with tracer.start_as_current_span('during'):
                 assert yielded + returned == 3
-    """
-    )
+    """)
     pytester.runpytest().assert_outcomes(passed=1)
 
     spans = span_recorder.spans_by_name()
@@ -371,8 +355,7 @@ def test_spans_cover_setup_and_teardown(
 def test_spans_cover_fixtures_at_different_scopes(
     pytester: Pytester, span_recorder: SpanRecorder
 ) -> None:
-    pytester.makepyfile(
-        """
+    pytester.makepyfile("""
         import pytest
         from opentelemetry import trace
 
@@ -392,8 +375,7 @@ def test_spans_cover_fixtures_at_different_scopes(
 
         def test_one(session_scoped: int, module_scoped: int, function_scoped: int):
             assert session_scoped + module_scoped + function_scoped == 6
-    """
-    )
+    """)
     pytester.runpytest().assert_outcomes(passed=1)
 
     spans = span_recorder.spans_by_name()
@@ -430,8 +412,7 @@ def test_spans_from_fixutres_used_multiple_times(
     span_recorder: SpanRecorder,
     args: List[str],
 ) -> None:
-    pytester.makepyfile(
-        """
+    pytester.makepyfile("""
         import pytest
         from opentelemetry import trace
 
@@ -469,8 +450,7 @@ def test_spans_from_fixutres_used_multiple_times(
             def test_c(self, class_scoped: int, function_scoped: int):
                 assert class_scoped + function_scoped == 7
 
-    """
-    )
+    """)
     pytester.runpytest(*args).assert_outcomes(passed=5)
     spans = Counter(span.name for span in span_recorder.finished_spans())
 
@@ -490,8 +470,7 @@ def test_spans_from_fixutres_used_multiple_times(
 def test_parametrized_fixture_names(
     pytester: Pytester, span_recorder: SpanRecorder
 ) -> None:
-    pytester.makepyfile(
-        """
+    pytester.makepyfile("""
         import pytest
         from opentelemetry import trace
 
@@ -510,8 +489,7 @@ def test_parametrized_fixture_names(
         def test_one(stringable: int, unstringable: Nope):
             assert isinstance(stringable, int)
             assert isinstance(unstringable, Nope)
-    """
-    )
+    """)
     pytester.runpytest().assert_outcomes(passed=4)
 
     spans = span_recorder.spans_by_name()
