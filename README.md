@@ -152,5 +152,5 @@ development dependencies, with this command:
 pip install -e '.[dev]'
 ```
 
-When sending pull requests, don't forget to bump the version in
-[setup.cfg](./setup.cfg).
+`setuptools_scm` gets the version from the git tags, so pull requests do not
+change a version anywhere.
