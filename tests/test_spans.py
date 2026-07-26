@@ -123,7 +123,11 @@ def test_failures_and_errors(pytester: Pytester, span_recorder: SpanRecorder) ->
     event = span.events[0]
     assert event.attributes
     assert event.attributes['exception.type'] == 'Failed'
-    assert event.attributes['exception.message'] == "DID NOT RAISE <class 'ValueError'>"
+    # pytest 9 says "DID NOT RAISE ValueError"; earlier pytests said
+    # "DID NOT RAISE <class 'ValueError'>"
+    message = str(event.attributes['exception.message'])
+    assert message.startswith('DID NOT RAISE')
+    assert 'ValueError' in message
 
 
 def test_failures_in_fixtures(pytester: Pytester, span_recorder: SpanRecorder) -> None:

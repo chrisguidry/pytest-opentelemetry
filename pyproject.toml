@@ -2,6 +2,55 @@
 requires = ["setuptools>=62", "setuptools_scm[toml]>=6.2"]
 build-backend = "setuptools.build_meta"
 
+[project]
+name = "pytest-opentelemetry"
+description = "A pytest plugin for instrumenting test runs via OpenTelemetry"
+readme = "README.md"
+authors = [{ name = "Chris Guidry", email = "chris@theguidrys.us" }]
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Framework :: Pytest",
+]
+dependencies = [
+    "opentelemetry-api",
+    "opentelemetry-container-distro",
+    "opentelemetry-sdk",
+    "opentelemetry-semantic-conventions",
+    "pytest",
+]
+dynamic = ["version"]
+
+[project.urls]
+Homepage = "https://github.com/chrisguidry/pytest-opentelemetry"
+"Bug Tracker" = "https://github.com/chrisguidry/pytest-opentelemetry/issues"
+
+[project.optional-dependencies]
+dev = [
+    "black",
+    "build",
+    "flake8",
+    "flake8-black",
+    "isort",
+    "mypy",
+    "pre-commit",
+    "pytest",
+    "pytest-cov",
+    "pytest-xdist",
+    "twine",
+]
+
+[project.entry-points.pytest11]
+pytest_opentelemetry = "pytest_opentelemetry.plugin"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+pytest_opentelemetry = ["py.typed"]
+
 [tool.setuptools_scm]
 
 [tool.black]

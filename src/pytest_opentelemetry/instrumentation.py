@@ -171,8 +171,9 @@ class PerTestOpenTelemetryPlugin:
         was for."""
 
         # If the fixture has already been torn down, then it will have no cached
-        # result, so we can skip this one.
-        if fixturedef.cached_result is None:
+        # result, so we can skip this one. pytest 9 tears fixtures down before
+        # this hook, so only earlier pytests reach this branch.
+        if fixturedef.cached_result is None:  # pragma: no cover
             yield
         # Passing `-x` option to pytest can cause it to exit early so it may not
         # have this span attribute.
