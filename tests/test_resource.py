@@ -64,18 +64,15 @@ def test_service_version_unknown(bare_codebase: str, resource: Resource) -> None
 
 
 def test_service_version_git_problems() -> None:
+    # CalledProcessError's message differs by Python version (3.15 drops the
+    # quotes around the command), so the expected text comes from the error.
+    error = subprocess.CalledProcessError(128, ['git', 'rev-parse', 'HEAD'])
     with patch(
         'pytest_opentelemetry.resource.subprocess.check_output',
-        side_effect=[
-            b'true',
-            subprocess.CalledProcessError(128, ['git', 'rev-parse', 'HEAD']),
-        ],
+        side_effect=[b'true', error],
     ):
         resource = CodebaseResourceDetector(Mock()).detect()
-        assert resource.attributes['service.version'] == (
-            "[unknown: Command '['git', 'rev-parse', 'HEAD']' "
-            "returned non-zero exit status 128.]"
-        )
+        assert resource.attributes['service.version'] == f'[unknown: {error}]'
     with patch(
         'pytest_opentelemetry.resource.subprocess.check_output', side_effect=[b'false']
     ):
