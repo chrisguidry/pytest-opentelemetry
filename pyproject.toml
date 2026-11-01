@@ -7,16 +7,16 @@ name = "pytest-opentelemetry"
 description = "A pytest plugin for instrumenting test runs via OpenTelemetry"
 readme = "README.md"
 authors = [{ name = "Chris Guidry", email = "chris@theguidrys.us" }]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = "MIT"
 license-files = ["LICENSE"]
 classifiers = [
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
     "Operating System :: OS Independent",
     "Framework :: Pytest",
 ]
@@ -61,7 +61,7 @@ pytest_opentelemetry = ["py.typed"]
 
 [tool.black]
 skip-string-normalization = true
-target-version = ['py310']
+target-version = ['py311']
 
 [tool.coverage.report]
 omit = [
