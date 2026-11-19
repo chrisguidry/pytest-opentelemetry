@@ -10,6 +10,9 @@ from pytest import Config
 Attributes = dict[str, str | bool | int | float]
 
 
+JUNIT_SUITE_NAME_DEFAULT = "pytest"
+
+
 class CodebaseResourceDetector(ResourceDetector):
     """Detects OpenTelemetry Resource attributes for an operating system process,
     providing the `process.*` attributes"""
@@ -19,12 +22,18 @@ class CodebaseResourceDetector(ResourceDetector):
         ResourceDetector.__init__(self)
 
     def get_suite_name(self) -> str:
-        """Get the junit_suite_name setting, which is only available while the
-        junitxml plugin is enabled"""
+        """Get the junit_suite_name setting when the project has set one.
+
+        The setting exists only while the junitxml plugin is enabled, and that
+        plugin's default for it is "pytest".  pytest does not say whether a
+        value came from the project or from the default, so a suite named
+        "pytest" counts as not set; otherwise every project without the setting
+        would be named "pytest"."""
         try:
-            return str(self.config.getini("junit_suite_name"))
+            name = str(self.config.getini("junit_suite_name"))
         except ValueError:
             return ""
+        return "" if name == JUNIT_SUITE_NAME_DEFAULT else name
 
     def get_codebase_name(self) -> str:
         """Get the name of the codebase.
