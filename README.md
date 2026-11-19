@@ -82,6 +82,14 @@ nest this run under that parent:
 pytest ... --trace-parent 00-1234567890abcdef1234567890abcdef-fedcba0987654321-01
 ```
 
+## Tests that freeze time
+
+If [`freezegun`](https://pypi.org/project/freezegun/) is installed,
+`pytest-opentelemetry` adds `opentelemetry` to freezegun's list of ignored packages.
+Spans then start and end at the real time, even while a test has time frozen, so their
+durations stay correct.  This covers every span that OpenTelemetry records during the
+test run, including the ones your application creates.
+
 ## Visualizing test traces
 
 One quick way to visualize test traces would be to use an [OpenTelemetry

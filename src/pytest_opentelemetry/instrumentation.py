@@ -23,6 +23,21 @@ from .resource import CodebaseResourceDetector
 tracer = trace.get_tracer('pytest-opentelemetry')
 
 
+def use_real_time_under_freezegun() -> None:
+    """Tells freezegun, when it is installed, to give OpenTelemetry the real time.
+
+    freezegun replaces the clock that OpenTelemetry reads for a span's start and
+    end.  A span that starts before a test freezes time and ends while time is
+    frozen gets a negative duration, and a span that both starts and ends in
+    frozen time gets a duration of zero."""
+    try:
+        import freezegun  # pylint: disable=import-outside-toplevel
+    except ImportError:
+        return
+
+    freezegun.configure(extend_ignore_list=['opentelemetry'])
+
+
 class PerTestOpenTelemetryPlugin:
     """base logic for all otel pytest integration"""
 
@@ -53,6 +68,8 @@ class PerTestOpenTelemetryPlugin:
 
     def pytest_configure(self, config: Config) -> None:
         self.trace_parent = self.get_trace_parent(config)
+
+        use_real_time_under_freezegun()
 
         # This can't be tested both ways in one process
         if config.getoption('--export-traces'):  # pragma: no cover
