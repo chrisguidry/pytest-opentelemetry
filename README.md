@@ -82,6 +82,21 @@ nest this run under that parent:
 pytest ... --trace-parent 00-1234567890abcdef1234567890abcdef-fedcba0987654321-01
 ```
 
+## Working with other plugins
+
+`pytest-opentelemetry` registers the object that creates its spans under the name
+`opentelemetry`.  Another plugin or a `conftest.py` can get it from pytest's plugin
+manager, for example to read the span for the whole test run:
+
+```python
+def pytest_collection_finish(session):
+    plugin = session.config.pluginmanager.get_plugin("opentelemetry")
+    trace_id = plugin.session_span.get_span_context().trace_id
+```
+
+With `--trace-per-test` there is no span for the whole run, so `session_span` is not
+set.
+
 ## Visualizing test traces
 
 One quick way to visualize test traces would be to use an [OpenTelemetry
