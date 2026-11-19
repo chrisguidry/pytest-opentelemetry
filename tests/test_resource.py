@@ -1,5 +1,6 @@
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 from typing import Generator
@@ -15,7 +16,7 @@ from pytest_opentelemetry.resource import CodebaseResourceDetector
 def bare_codebase() -> Generator[str, None, None]:
     previous = os.getcwd()
     with tempfile.TemporaryDirectory() as directory:
-        project_path = os.path.join(directory, 'my-project')
+        project_path = os.path.join(directory, "my-project")
         os.makedirs(project_path)
         os.chdir(project_path)
         try:
@@ -32,75 +33,75 @@ def resource() -> Resource:
 @pytest.fixture
 def config() -> MagicMock:
     config = MagicMock()
-    config.getini.return_value = ''
+    config.getini.return_value = ""
     config.getoption.return_value = None
     config.rootpath.name = None
     return config
 
 
 def test_codebase_name_from_suite_name(config: MagicMock) -> None:
-    config.getini.return_value = 'my-project'
-    assert CodebaseResourceDetector(config).get_codebase_name() == 'my-project'
+    config.getini.return_value = "my-project"
+    assert CodebaseResourceDetector(config).get_codebase_name() == "my-project"
 
 
 def test_codebase_name_from_junit_prefix(config: MagicMock) -> None:
-    config.getoption.return_value = 'my-project'
-    assert CodebaseResourceDetector(config).get_codebase_name() == 'my-project'
+    config.getoption.return_value = "my-project"
+    assert CodebaseResourceDetector(config).get_codebase_name() == "my-project"
 
 
 def test_codebase_name_from_root_path(config: MagicMock) -> None:
-    config.rootpath.name = 'my-project'
-    assert CodebaseResourceDetector(config).get_codebase_name() == 'my-project'
+    config.rootpath.name = "my-project"
+    assert CodebaseResourceDetector(config).get_codebase_name() == "my-project"
 
 
 def test_codebase_name_without_the_junitxml_plugin(config: MagicMock) -> None:
-    config.getini.side_effect = ValueError('unknown configuration value')
-    config.rootpath.name = 'my-project'
-    assert CodebaseResourceDetector(config).get_codebase_name() == 'my-project'
+    config.getini.side_effect = ValueError("unknown configuration value")
+    config.rootpath.name = "my-project"
+    assert CodebaseResourceDetector(config).get_codebase_name() == "my-project"
 
 
 def test_service_version_unknown(bare_codebase: str, resource: Resource) -> None:
-    assert resource.attributes['service.version'] == '[unknown: not a git repository]'
+    assert resource.attributes["service.version"] == "[unknown: not a git repository]"
 
 
 def test_service_version_git_problems() -> None:
     # CalledProcessError's message differs by Python version (3.15 drops the
     # quotes around the command), so the expected text comes from the error.
-    error = subprocess.CalledProcessError(128, ['git', 'rev-parse', 'HEAD'])
+    error = subprocess.CalledProcessError(128, ["git", "rev-parse", "HEAD"])
     with patch(
-        'pytest_opentelemetry.resource.subprocess.check_output',
-        side_effect=[b'true', error],
+        "pytest_opentelemetry.resource.subprocess.check_output",
+        side_effect=[b"true", error],
     ):
         resource = CodebaseResourceDetector(Mock()).detect()
-        assert resource.attributes['service.version'] == f'[unknown: {error}]'
+        assert resource.attributes["service.version"] == f"[unknown: {error}]"
     with patch(
-        'pytest_opentelemetry.resource.subprocess.check_output', side_effect=[b'false']
+        "pytest_opentelemetry.resource.subprocess.check_output", side_effect=[b"false"]
     ):
         resource = CodebaseResourceDetector(Mock()).detect()
-        assert resource.attributes['service.version'] == (
+        assert resource.attributes["service.version"] == (
             "[unknown: not a git repository]"
         )
 
 
 @pytest.fixture
 def git_repo(bare_codebase: str) -> str:
-    if os.system('which git') > 0:  # pragma: no cover
-        pytest.skip('No git available on path')
+    if not shutil.which("git"):  # pragma: no cover
+        pytest.skip("No git available on path")
 
-    with open('README.md', 'w', encoding='utf-8') as readme:
-        readme.write('# hi!\n')
+    with open("README.md", "w", encoding="utf-8") as readme:
+        readme.write("# hi!\n")
 
-    os.system('git init')
-    os.system('git config user.email "testing@example.com"')
-    os.system('git config user.name "Testy McTesterson"')
-    os.system('git add README.md')
-    os.system('git commit --message="Saying hi!"')
+    subprocess.check_call(["git", "init"])
+    subprocess.check_call(["git", "config", "user.email", "testing@example.com"])
+    subprocess.check_call(["git", "config", "user.name", "Testy McTesterson"])
+    subprocess.check_call(["git", "add", "README.md"])
+    subprocess.check_call(["git", "commit", "--message=Saying hi!"])
 
     return bare_codebase
 
 
 def test_service_version_from_git_revision(git_repo: str, resource: Resource) -> None:
-    version = resource.attributes['service.version']
+    version = resource.attributes["service.version"]
     assert isinstance(version, str)
     assert len(version) == 40
-    assert re.match(r'[\da-f]{40}', version)
+    assert re.match(r"[\da-f]{40}", version)

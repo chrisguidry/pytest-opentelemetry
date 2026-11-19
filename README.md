@@ -159,20 +159,26 @@ service:
 Two references I keep returning to is the pytest guide on writing plugins, and the
 pytest API reference:
 
-* https://docs.pytest.org/en/6.2.x/writing_plugins.html
-* https://docs.pytest.org/en/6.2.x/reference.html#hooks
+* https://docs.pytest.org/en/stable/how-to/writing_plugins.html
+* https://docs.pytest.org/en/stable/reference/reference.html#hooks
 
 These are extremely helpful in understanding the lifecycle of a pytest run.
 
-To get setup for development, you will likely want to use a "virtual environment", using
-great tools like `virtualenv` or `pyenv`.
-
-Once you have a virtual environment, install this package for editing, along with its
-development dependencies, with this command:
+To get set up for development, install [uv](https://docs.astral.sh/uv/), then install
+this package and its development tools into a virtual environment, and install the git
+hooks:
 
 ```bash
-pip install -e '.[dev]'
+uv sync
+uv run prek install
 ```
 
-`setuptools_scm` gets the version from the git tags, so pull requests do not
+Run the tests and the checks with:
+
+```bash
+uv run pytest
+uv run prek run --all-files
+```
+
+`hatch-vcs` gets the version from the git tags, so pull requests do not
 change a version anywhere.

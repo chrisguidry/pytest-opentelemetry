@@ -3,15 +3,15 @@ from _pytest.config.argparsing import Parser
 
 
 def pytest_addoption(parser: Parser) -> None:
-    group = parser.getgroup('pytest-opentelemetry', 'OpenTelemetry for test runs')
+    group = parser.getgroup("pytest-opentelemetry", "OpenTelemetry for test runs")
     group.addoption(
         "--export-traces",
         action="store_true",
         default=False,
         help=(
-            'Enables exporting of OpenTelemetry traces via OTLP, by default to '
-            'http://localhost:4317.  Set the OTEL_EXPORTER_OTLP_ENDPOINT environment '
-            'variable to specify an alternative endpoint.'
+            "Enables exporting of OpenTelemetry traces via OTLP, by default to "
+            "http://localhost:4317.  Set the OTEL_EXPORTER_OTLP_ENDPOINT environment "
+            "variable to specify an alternative endpoint."
         ),
     )
     group.addoption(
@@ -19,11 +19,11 @@ def pytest_addoption(parser: Parser) -> None:
         action="store",
         default=None,
         help=(
-            'Specify a trace parent for this pytest run, in the form of a W3C '
-            'traceparent header, like '
-            '00-1234567890abcdef1234567890abcdef-fedcba0987654321-01.  If a trace '
-            'parent is provided, this test run will appear as a span within that '
-            'trace.  If it is omitted, this test run will start a new trace.'
+            "Specify a trace parent for this pytest run, in the form of a W3C "
+            "traceparent header, like "
+            "00-1234567890abcdef1234567890abcdef-fedcba0987654321-01.  If a trace "
+            "parent is provided, this test run will appear as a span within that "
+            "trace.  If it is omitted, this test run will start a new trace."
         ),
     )
     group.addoption(
@@ -43,7 +43,7 @@ def pytest_configure(config: Config) -> None:
     )
 
     plugin: PerTestOpenTelemetryPlugin
-    if config.getvalue('--trace-per-test'):
+    if config.getoption("--trace-per-test"):
         plugin = PerTestOpenTelemetryPlugin()
     elif config.pluginmanager.has_plugin("xdist"):
         plugin = XdistOpenTelemetryPlugin()
@@ -52,4 +52,4 @@ def pytest_configure(config: Config) -> None:
 
     # The name lets other plugins and conftest files find this object with
     # config.pluginmanager.get_plugin('opentelemetry').
-    config.pluginmanager.register(plugin, 'opentelemetry')
+    config.pluginmanager.register(plugin, "opentelemetry")

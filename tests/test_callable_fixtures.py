@@ -22,13 +22,13 @@ def test_fixture_from_a_callable_instance(
     """)
     pytester.runpytest().assert_outcomes(passed=1)
 
-    span = span_recorder.spans_by_name()['answer setup']
+    span = span_recorder.spans_by_name()["answer setup"]
     assert span.attributes
-    assert span.attributes['code.function'] == 'answer'
-    assert span.attributes['code.filepath'].endswith(
-        'test_fixture_from_a_callable_instance.py'
+    assert span.attributes["code.function"] == "answer"
+    assert str(span.attributes["code.filepath"]).endswith(
+        "test_fixture_from_a_callable_instance.py"
     )
-    assert span.attributes['code.lineno'] == 6
+    assert span.attributes["code.lineno"] == 6
 
 
 def test_fixture_from_a_callable_without_python_code(
@@ -50,8 +50,8 @@ def test_fixture_from_a_callable_without_python_code(
     """)
     pytester.runpytest().assert_outcomes(passed=1)
 
-    span = span_recorder.spans_by_name()['answer setup']
+    span = span_recorder.spans_by_name()["answer setup"]
     assert span.attributes
-    assert span.attributes['code.function'] == 'answer'
-    assert 'code.filepath' not in span.attributes
-    assert 'code.lineno' not in span.attributes
+    assert span.attributes["code.function"] == "answer"
+    assert "code.filepath" not in span.attributes
+    assert "code.lineno" not in span.attributes

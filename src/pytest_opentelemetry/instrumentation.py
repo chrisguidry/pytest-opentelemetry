@@ -1,6 +1,7 @@
 import os
+from collections.abc import Iterator
 from types import CodeType
-from typing import Any, Dict, Iterator, Optional, Union
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from _pytest.config import Config
@@ -11,9 +12,14 @@ from _pytest.reports import TestReport
 from _pytest.runner import CallInfo
 from opentelemetry import propagate, trace
 from opentelemetry.context.context import Context
-from opentelemetry.sdk.resources import OTELResourceDetector
-from opentelemetry.semconv.trace import SpanAttributes
-from opentelemetry.trace import Status, StatusCode
+from opentelemetry.sdk.resources import OTELResourceDetector, ResourceDetector
+from opentelemetry.semconv._incubating.attributes.code_attributes import (  # pyright: ignore[reportMissingTypeStubs]
+    CODE_FILEPATH,
+    CODE_FUNCTION,
+    CODE_LINENO,
+)
+from opentelemetry.semconv.attributes.exception_attributes import EXCEPTION_STACKTRACE
+from opentelemetry.trace import Span, Status, StatusCode, Tracer
 from opentelemetry_container_distro import (
     OpenTelemetryContainerConfigurator,
     OpenTelemetryContainerDistro,
@@ -21,7 +27,12 @@ from opentelemetry_container_distro import (
 
 from .resource import CodebaseResourceDetector
 
-tracer = trace.get_tracer('pytest-opentelemetry')
+if TYPE_CHECKING:
+    from xdist.workermanage import (  # pyright: ignore[reportMissingTypeStubs]
+        WorkerController,
+    )
+
+tracer: Tracer = trace.get_tracer("pytest-opentelemetry")
 
 
 def use_real_time_under_freezegun() -> None:
@@ -32,27 +43,33 @@ def use_real_time_under_freezegun() -> None:
     frozen gets a negative duration, and a span that both starts and ends in
     frozen time gets a duration of zero."""
     try:
-        import freezegun  # pylint: disable=import-outside-toplevel
+        import freezegun
     except ImportError:
         return
 
-    freezegun.configure(extend_ignore_list=['opentelemetry'])
+    freezegun.configure(extend_ignore_list=["opentelemetry"])
 
 
 class PerTestOpenTelemetryPlugin:
     """base logic for all otel pytest integration"""
 
+    trace_parent: Context | None = None
+
+    # The span for the fixture that pytest tears down next, while a test's
+    # teardown is running.
+    _fixture_teardown_span: Span | None = None
+
     @property
-    def item_parent(self) -> Union[str, None]:
+    def item_parent(self) -> Context | None:
         return self.trace_parent
 
     @classmethod
-    def get_trace_parent(cls, config: Config) -> Optional[Context]:
-        if trace_parent := config.getvalue('--trace-parent'):
-            return propagate.extract({'traceparent': trace_parent})
+    def get_trace_parent(cls, config: Config) -> Context | None:
+        if trace_parent := config.getoption("--trace-parent"):
+            return propagate.extract({"traceparent": trace_parent})
 
-        if trace_parent := os.environ.get('TRACEPARENT'):
-            return propagate.extract({'traceparent': trace_parent})
+        if trace_parent := os.environ.get("TRACEPARENT"):
+            return propagate.extract({"traceparent": trace_parent})
 
         return None
 
@@ -61,11 +78,12 @@ class PerTestOpenTelemetryPlugin:
         provider = trace.get_tracer_provider()
 
         # Not all providers (e.g. ProxyTraceProvider) implement force flush
-        if hasattr(provider, 'force_flush'):
-            provider.force_flush()
-            return True
-        else:
+        force_flush = getattr(provider, "force_flush", None)
+        if force_flush is None:
             return False
+
+        force_flush()
+        return True
 
     def pytest_configure(self, config: Config) -> None:
         self.trace_parent = self.get_trace_parent(config)
@@ -73,28 +91,29 @@ class PerTestOpenTelemetryPlugin:
         use_real_time_under_freezegun()
 
         # This can't be tested both ways in one process
-        if config.getoption('--export-traces'):  # pragma: no cover
-            OpenTelemetryContainerDistro().configure()
+        if config.getoption("--export-traces"):  # pragma: no cover
+            OpenTelemetryContainerDistro().configure()  # pyright: ignore[reportUnknownMemberType]
 
         configurator = OpenTelemetryContainerConfigurator()
-        configurator.resource_detectors.append(CodebaseResourceDetector(config))
-        configurator.resource_detectors.append(OTELResourceDetector())
-        configurator.configure()
+        detectors: list[ResourceDetector] = configurator.resource_detectors  # pyright: ignore[reportAssignmentType]
+        detectors.append(CodebaseResourceDetector(config))
+        detectors.append(OTELResourceDetector())
+        configurator.configure()  # pyright: ignore[reportUnknownMemberType]
 
     def pytest_sessionfinish(self, session: Session) -> None:
         self.try_force_flush()
 
-    def _attributes_from_item(self, item: Item) -> Dict[str, Union[str, int]]:
+    def _attributes_from_item(self, item: Item) -> dict[str, str | int]:
         filepath, line_number, _ = item.location
-        attributes: Dict[str, Union[str, int]] = {
-            SpanAttributes.CODE_FILEPATH: filepath,
-            SpanAttributes.CODE_FUNCTION: item.name,
+        attributes: dict[str, str | int] = {
+            CODE_FILEPATH: filepath,
+            CODE_FUNCTION: item.name,
             "pytest.nodeid": item.nodeid,
             "pytest.span_type": "test",
         }
         # In some cases like tavern, line_number can be 0
         if line_number:
-            attributes[SpanAttributes.CODE_LINENO] = line_number
+            attributes[CODE_LINENO] = line_number
         return attributes
 
     @pytest.hookimpl(hookwrapper=True)
@@ -109,53 +128,55 @@ class PerTestOpenTelemetryPlugin:
     @pytest.hookimpl(hookwrapper=True)
     def pytest_runtest_setup(self, item: Item) -> Iterator[None]:
         with tracer.start_as_current_span(
-            f'{item.nodeid}::setup',
+            f"{item.nodeid}::setup",
             attributes=self._attributes_from_item(item),
         ):
             yield
 
     def _attributes_from_fixturedef(
-        self, fixturedef: FixtureDef
-    ) -> Dict[str, Union[str, int]]:
-        attributes: Dict[str, Union[str, int]] = {
-            SpanAttributes.CODE_FUNCTION: fixturedef.argname,
+        self, fixturedef: FixtureDef[Any]
+    ) -> dict[str, str | int]:
+        attributes: dict[str, str | int] = {
+            CODE_FUNCTION: fixturedef.argname,
             "pytest.fixture_scope": fixturedef.scope,
             "pytest.span_type": "fixture",
         }
         if code := self._code_from_fixturedef(fixturedef):
-            attributes[SpanAttributes.CODE_FILEPATH] = code.co_filename
-            attributes[SpanAttributes.CODE_LINENO] = code.co_firstlineno
+            attributes[CODE_FILEPATH] = code.co_filename
+            attributes[CODE_LINENO] = code.co_firstlineno
         return attributes
 
     @staticmethod
-    def _code_from_fixturedef(fixturedef: FixtureDef) -> Optional[CodeType]:
+    def _code_from_fixturedef(fixturedef: FixtureDef[Any]) -> CodeType | None:
         """Finds the Python code that a fixture runs, when there is any.
 
         pytest accepts any callable as a fixture.  A function has its own code,
         an instance of a class with a `__call__` method has that method's code,
         and a callable implemented in C has none."""
         for candidate in (fixturedef.func, type(fixturedef.func).__call__):
-            if code := getattr(candidate, '__code__', None):
+            if code := getattr(candidate, "__code__", None):
                 return code
         return None
 
-    def _name_from_fixturedef(self, fixturedef: FixtureDef, request: FixtureRequest):
-        if fixturedef.params and 'request' in fixturedef.argnames:
+    def _name_from_fixturedef(
+        self, fixturedef: FixtureDef[Any], request: FixtureRequest
+    ) -> str:
+        if fixturedef.params and "request" in fixturedef.argnames:
             try:
                 parameter = str(request.param)
             except Exception:
                 parameter = str(
-                    request.param_index if isinstance(request, SubRequest) else '?'
+                    request.param_index if isinstance(request, SubRequest) else "?"
                 )
             return f"{fixturedef.argname}[{parameter}]"
         return fixturedef.argname
 
     @pytest.hookimpl(hookwrapper=True)
     def pytest_fixture_setup(
-        self, fixturedef: FixtureDef, request: FixtureRequest
+        self, fixturedef: FixtureDef[Any], request: FixtureRequest
     ) -> Iterator[None]:
         with tracer.start_as_current_span(
-            name=f'{self._name_from_fixturedef(fixturedef, request)} setup',
+            name=f"{self._name_from_fixturedef(fixturedef, request)} setup",
             attributes=self._attributes_from_fixturedef(fixturedef),
         ):
             yield
@@ -163,7 +184,7 @@ class PerTestOpenTelemetryPlugin:
     @pytest.hookimpl(hookwrapper=True)
     def pytest_runtest_call(self, item: Item) -> Iterator[None]:
         with tracer.start_as_current_span(
-            name=f'{item.nodeid}::call',
+            name=f"{item.nodeid}::call",
             attributes=self._attributes_from_item(item),
         ):
             yield
@@ -171,7 +192,7 @@ class PerTestOpenTelemetryPlugin:
     @pytest.hookimpl(hookwrapper=True)
     def pytest_runtest_teardown(self, item: Item) -> Iterator[None]:
         with tracer.start_as_current_span(
-            name=f'{item.nodeid}::teardown',
+            name=f"{item.nodeid}::teardown",
             attributes=self._attributes_from_item(item),
         ):
             # Since there is no pytest_fixture_teardown hook, we have to be a
@@ -190,12 +211,12 @@ class PerTestOpenTelemetryPlugin:
             yield
 
         # The last call to pytest_fixture_post_finalizer will create
-        # a span that is unneeded, so delete it.
-        del self._fixture_teardown_span
+        # a span that is unneeded, so drop it.
+        self._fixture_teardown_span = None
 
     @pytest.hookimpl(hookwrapper=True)
     def pytest_fixture_post_finalizer(
-        self, fixturedef: FixtureDef, request: SubRequest
+        self, fixturedef: FixtureDef[Any], request: SubRequest
     ) -> Iterator[None]:
         """When the span for a fixture teardown is created by
         pytest_runtest_teardown or a previous pytest_fixture_post_finalizer, we
@@ -205,24 +226,22 @@ class PerTestOpenTelemetryPlugin:
         # If the fixture has already been torn down, then it will have no cached
         # result, so we can skip this one. pytest 9 tears fixtures down before
         # this hook, so only earlier pytests reach this branch.
-        if fixturedef.cached_result is None:  # pragma: no cover
-            yield
-        # Passing `-x` option to pytest can cause it to exit early so it may not
-        # have this span attribute.
-        elif not hasattr(self, "_fixture_teardown_span"):  # pragma: no cover
+        if (
+            fixturedef.cached_result is None
+            or (span := self._fixture_teardown_span) is None
+        ):  # pragma: no cover
             yield
         else:
             # If we've gotten here, we have a real fixture about to be torn down.
-            name = f'{self._name_from_fixturedef(fixturedef, request)} teardown'
-            self._fixture_teardown_span.update_name(name)
-            attributes = self._attributes_from_fixturedef(fixturedef)
-            self._fixture_teardown_span.set_attributes(attributes)
+            name = f"{self._name_from_fixturedef(fixturedef, request)} teardown"
+            span.update_name(name)
+            span.set_attributes(self._attributes_from_fixturedef(fixturedef))
             yield
-            self._fixture_teardown_span.end()
+            span.end()
 
         # Create the span for the next fixture to be torn down. When there are
         # no more fixtures remaining, this will be an empty, useless span, so it
-        # needs to be deleted by pytest_runtest_teardown.
+        # needs to be dropped by pytest_runtest_teardown.
         self._fixture_teardown_span = tracer.start_span("fixture teardown")
 
     @staticmethod
@@ -243,7 +262,7 @@ class PerTestOpenTelemetryPlugin:
             # BaseException, not Exception
             exception=excinfo.value,  # type: ignore[arg-type]
             attributes={
-                SpanAttributes.EXCEPTION_STACKTRACE: str(report.longrepr),
+                EXCEPTION_STACKTRACE: str(report.longrepr),
             },
         )
         test_span.set_status(
@@ -254,10 +273,10 @@ class PerTestOpenTelemetryPlugin:
         )
 
     def pytest_runtest_logreport(self, report: TestReport) -> None:
-        if report.when != 'call':
+        if report.when != "call":
             return
 
-        has_error = report.outcome == 'failed'
+        has_error = report.outcome == "failed"
         status_code = StatusCode.ERROR if has_error else StatusCode.OK
         trace.get_current_span().set_status(status_code)
 
@@ -266,21 +285,24 @@ class OpenTelemetryPlugin(PerTestOpenTelemetryPlugin):
     """A pytest plugin which produces OpenTelemetry spans around test sessions and
     individual test runs."""
 
+    session_span: Span
+    has_error: bool = False
+    _session_name: str | None = None
+
     @property
-    def session_name(self):
+    def session_name(self) -> str:
         # Lazy initialise session name
-        if not hasattr(self, '_session_name'):
-            self._session_name = os.environ.get('PYTEST_RUN_NAME', 'test run')
+        if self._session_name is None:
+            self._session_name = os.environ.get("PYTEST_RUN_NAME", "test run")
         return self._session_name
 
     @session_name.setter
-    def session_name(self, name):
+    def session_name(self, name: str) -> None:
         self._session_name = name
 
     @property
-    def item_parent(self) -> Union[str, None]:
-        context = trace.set_span_in_context(self.session_span)
-        return context
+    def item_parent(self) -> Context | None:
+        return trace.set_span_in_context(self.session_span)
 
     def pytest_sessionstart(self, session: Session) -> None:
         self.session_span = tracer.start_span(
@@ -298,7 +320,7 @@ class OpenTelemetryPlugin(PerTestOpenTelemetryPlugin):
         # that those imports create become its children, and an error that
         # stops a module from importing is recorded on it.
         with tracer.start_as_current_span(
-            'collection',
+            "collection",
             context=self.item_parent,
             attributes={
                 "pytest.span_type": "collection",
@@ -316,45 +338,46 @@ class OpenTelemetryPlugin(PerTestOpenTelemetryPlugin):
 
     def pytest_runtest_logreport(self, report: TestReport) -> None:
         super().pytest_runtest_logreport(report)
-        self.has_error |= report.when == 'call' and report.outcome == 'failed'
-
-
-try:
-    from xdist import is_xdist_controller
-    from xdist.workermanage import WorkerController  # pylint: disable=unused-import
-except ImportError:  # pragma: no cover
-    WorkerController = None
+        self.has_error |= report.when == "call" and report.outcome == "failed"
 
 
 class XdistOpenTelemetryPlugin(OpenTelemetryPlugin):
     """An xdist-aware version of the OpenTelemetryPlugin"""
 
     @classmethod
-    def get_trace_parent(cls, config: Config) -> Optional[Context]:
-        if workerinput := getattr(config, 'workerinput', None):
+    def get_trace_parent(cls, config: Config) -> Context | None:
+        if workerinput := getattr(config, "workerinput", None):
             return propagate.extract(workerinput)
 
         return super().get_trace_parent(config)
 
     def pytest_configure(self, config: Config) -> None:
         super().pytest_configure(config)
-        worker_id = getattr(config, 'workerinput', {}).get('workerid')
+        worker_id = getattr(config, "workerinput", {}).get("workerid")
         self.session_name = (
-            f'test worker {worker_id}' if worker_id else self.session_name
+            f"test worker {worker_id}" if worker_id else self.session_name
         )
 
     @pytest.hookimpl(hookwrapper=True)
     def pytest_collection(self, session: Session) -> Iterator[None]:
         # The controller hands collection to its workers, and each worker
         # records its own collection span under its own session span.
+        from xdist import (  # pyright: ignore[reportMissingTypeStubs]
+            is_xdist_controller,
+        )
+
         if is_xdist_controller(session):
             yield
         else:
             yield from super().pytest_collection(session)
 
-    def pytest_configure_node(self, node: WorkerController) -> None:  # pragma: no cover
+    def pytest_configure_node(
+        self, node: "WorkerController"
+    ) -> None:  # pragma: no cover
         with trace.use_span(self.session_span, end_on_exit=False):
-            propagate.inject(node.workerinput)
+            propagate.inject(node.workerinput)  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
 
-    def pytest_xdist_node_collection_finished(node, ids):  # pragma: no cover
-        super().try_force_flush()
+    def pytest_xdist_node_collection_finished(
+        self, node: "WorkerController", ids: list[str]
+    ) -> None:  # pragma: no cover
+        self.try_force_flush()
