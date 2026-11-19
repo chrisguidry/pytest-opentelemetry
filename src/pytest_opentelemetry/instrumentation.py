@@ -275,6 +275,20 @@ class OpenTelemetryPlugin(PerTestOpenTelemetryPlugin):
         )
         self.has_error = False
 
+    @pytest.hookimpl(hookwrapper=True)
+    def pytest_collection(self, session: Session) -> Iterator[None]:
+        # The span is current while pytest imports the test modules, so spans
+        # that those imports create become its children, and an error that
+        # stops a module from importing is recorded on it.
+        with tracer.start_as_current_span(
+            'collection',
+            context=self.item_parent,
+            attributes={
+                "pytest.span_type": "collection",
+            },
+        ):
+            yield
+
     def pytest_sessionfinish(self, session: Session) -> None:
         self.session_span.set_status(
             StatusCode.ERROR if self.has_error else StatusCode.OK
@@ -289,6 +303,7 @@ class OpenTelemetryPlugin(PerTestOpenTelemetryPlugin):
 
 
 try:
+    from xdist import is_xdist_controller
     from xdist.workermanage import WorkerController  # pylint: disable=unused-import
 except ImportError:  # pragma: no cover
     WorkerController = None
@@ -310,6 +325,15 @@ class XdistOpenTelemetryPlugin(OpenTelemetryPlugin):
         self.session_name = (
             f'test worker {worker_id}' if worker_id else self.session_name
         )
+
+    @pytest.hookimpl(hookwrapper=True)
+    def pytest_collection(self, session: Session) -> Iterator[None]:
+        # The controller hands collection to its workers, and each worker
+        # records its own collection span under its own session span.
+        if is_xdist_controller(session):
+            yield
+        else:
+            yield from super().pytest_collection(session)
 
     def pytest_configure_node(self, node: WorkerController) -> None:  # pragma: no cover
         with trace.use_span(self.session_span, end_on_exit=False):
