@@ -96,6 +96,13 @@ def pytest_collection_finish(session):
 
 With `--trace-per-test` there is no span for the whole run, so `session_span` is not
 set.
+## Tests that freeze time
+
+If [`freezegun`](https://pypi.org/project/freezegun/) is installed,
+`pytest-opentelemetry` adds `opentelemetry` to freezegun's list of ignored packages.
+Spans then start and end at the real time, even while a test has time frozen, so their
+durations stay correct.  This covers every span that OpenTelemetry records during the
+test run, including the ones your application creates.
 
 ## Visualizing test traces
 
