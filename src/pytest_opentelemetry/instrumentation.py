@@ -8,7 +8,7 @@ from _pytest.config import Config
 from _pytest.fixtures import FixtureDef, FixtureRequest, SubRequest
 from _pytest.main import Session
 from _pytest.nodes import Item, Node
-from _pytest.reports import TestReport
+from _pytest.reports import CollectReport, TestReport
 from _pytest.runner import CallInfo
 from opentelemetry import propagate, trace
 from opentelemetry.context.context import Context
@@ -323,9 +323,13 @@ class OpenTelemetryPlugin(PerTestOpenTelemetryPlugin):
         self.session_span.end()
         super().pytest_sessionfinish(session)
 
+    def pytest_collectreport(self, report: CollectReport) -> None:
+        self.has_error |= report.failed
+
     def pytest_runtest_logreport(self, report: TestReport) -> None:
         super().pytest_runtest_logreport(report)
-        self.has_error |= report.when == "call" and report.outcome == "failed"
+        # A test fails in its call, and errors in a fixture's setup or teardown.
+        self.has_error |= report.failed
 
 
 class XdistOpenTelemetryPlugin(OpenTelemetryPlugin):
