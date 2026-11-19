@@ -1,15 +1,16 @@
 [build-system]
-requires = ["setuptools>=77", "setuptools_scm[toml]>=6.2"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
 
 [project]
 name = "pytest-opentelemetry"
+dynamic = ["version"]
 description = "A pytest plugin for instrumenting test runs via OpenTelemetry"
-readme = "README.md"
-authors = [{ name = "Chris Guidry", email = "chris@theguidrys.us" }]
+readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.11"
 license = "MIT"
 license-files = ["LICENSE"]
+authors = [{ name = "Chris Guidry", email = "chris@theguidrys.us" }]
 classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
@@ -17,7 +18,9 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
     "Programming Language :: Python :: 3.15",
+    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
+    "Typing :: Typed",
     "Framework :: Pytest",
 ]
 dependencies = [
@@ -27,79 +30,55 @@ dependencies = [
     "opentelemetry-semantic-conventions",
     "pytest",
 ]
-dynamic = ["version"]
+
+[dependency-groups]
+dev = [
+    "codespell>=2.4.1",
+    "freezegun>=1.5.0",
+    "loq>=0.1.0a3",
+    "prek>=0.3.1",
+    "pyright>=1.1.408",
+    "pytest-cov>=6.0.0",
+    "pytest-xdist>=3.6.0",
+    "pytest>=9.0.2",
+]
 
 [project.urls]
-Homepage = "https://github.com/chrisguidry/pytest-opentelemetry"
+"Repository" = "https://github.com/chrisguidry/pytest-opentelemetry"
 "Bug Tracker" = "https://github.com/chrisguidry/pytest-opentelemetry/issues"
-
-[project.optional-dependencies]
-dev = [
-    "black",
-    "build",
-    "flake8",
-    "flake8-black",
-    "freezegun",
-    "isort",
-    "mypy",
-    "pre-commit",
-    "pytest",
-    "pytest-cov",
-    "pytest-xdist",
-    "twine",
-]
 
 [project.entry-points.pytest11]
 pytest_opentelemetry = "pytest_opentelemetry.plugin"
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[tool.hatch.version]
+source = "vcs"
 
-[tool.setuptools.package-data]
-pytest_opentelemetry = ["py.typed"]
+[tool.hatch.build.targets.wheel]
+packages = ["src/pytest_opentelemetry"]
 
-[tool.setuptools_scm]
-
-[tool.black]
-skip-string-normalization = true
-target-version = ['py311']
-
-[tool.coverage.report]
-omit = [
-    "src/pytest_opentelemetry/__init__.py",
-    "src/pytest_opentelemetry/plugin.py"
-]
-
-[tool.isort]
-profile = "black"
-
-[tool.mypy]
-namespace_packages = true
-
-[[tool.mypy.overrides]]
-module = ['xdist.workermanage']
-ignore_missing_imports = true
-
-[tool.pylint.messages_control]
-disable = [
-    'attribute-defined-outside-init',
-    'fixme',
-
-    'missing-function-docstring',
-    'missing-module-docstring',
-
-    # fundamental to how pytest fixtures work
-    'redefined-outer-name',
-    'unused-argument'
-]
+[tool.ruff]
+target-version = "py311"
 
 [tool.pytest.ini_options]
-minversion = "6.0"
-addopts = """
-    --cov=src
-    --cov=tests
-    --cov-branch
-    --cov-report=term-missing
-    --cov-fail-under=100
-    --no-cov-on-fail
-"""
+addopts = [
+    "--cov=src/pytest_opentelemetry",
+    "--cov=tests",
+    "--cov-report=term-missing:skip-covered",
+    "--cov-branch",
+    "--cov-fail-under=100",
+]
+filterwarnings = ["error"]
+
+[tool.coverage.report]
+# pytest imports these two modules to load the plugin, before pytest-cov
+# starts measuring, so their module-level lines never count as covered.
+omit = [
+    "src/pytest_opentelemetry/__init__.py",
+    "src/pytest_opentelemetry/plugin.py",
+]
+
+[tool.pyright]
+include = ["src", "tests"]
+typeCheckingMode = "strict"
+venvPath = "."
+venv = ".venv"

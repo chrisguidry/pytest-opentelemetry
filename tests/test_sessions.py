@@ -1,6 +1,6 @@
 import os
+from collections.abc import Generator
 from contextlib import contextmanager
-from typing import Dict, Generator, List, Optional
 from unittest.mock import Mock, patch
 
 import pytest
@@ -17,8 +17,8 @@ from . import SpanRecorder
 
 
 @contextmanager
-def environment(**overrides: Optional[str]) -> Generator[None, None, None]:
-    original: Dict[str, Optional[str]] = {}
+def environment(**overrides: str | None) -> Generator[None, None, None]:
+    original: dict[str, str | None] = {}
     for key, value in overrides.items():
         original[key] = os.environ.pop(key, None)
         if value is not None:
@@ -35,19 +35,19 @@ def environment(**overrides: Optional[str]) -> Generator[None, None, None]:
 
 
 def test_environment_manipulation():
-    assert 'VALUE' not in os.environ
-    with environment(VALUE='outer'):
-        assert os.environ['VALUE'] == 'outer'
-        with environment(VALUE='inner'):
-            assert os.environ['VALUE'] == 'inner'
+    assert "VALUE" not in os.environ
+    with environment(VALUE="outer"):
+        assert os.environ["VALUE"] == "outer"
+        with environment(VALUE="inner"):
+            assert os.environ["VALUE"] == "inner"
             with environment(VALUE=None):
-                assert 'VALUE' not in os.environ
-                with environment(VALUE='once more'):
-                    assert os.environ['VALUE'] == 'once more'
-                assert 'VALUE' not in os.environ
-            assert os.environ['VALUE'] == 'inner'
-        assert os.environ['VALUE'] == 'outer'
-    assert 'VALUE' not in os.environ
+                assert "VALUE" not in os.environ
+                with environment(VALUE="once more"):
+                    assert os.environ["VALUE"] == "once more"
+                assert "VALUE" not in os.environ
+            assert os.environ["VALUE"] == "inner"
+        assert os.environ["VALUE"] == "outer"
+    assert "VALUE" not in os.environ
 
 
 def test_getting_no_trace_id(pytester: Pytester) -> None:
@@ -58,8 +58,8 @@ def test_getting_no_trace_id(pytester: Pytester) -> None:
 
 def test_getting_trace_id_from_command_line(pytester: Pytester) -> None:
     config = pytester.parseconfig(
-        '--trace-parent',
-        '00-1234567890abcdef1234567890abcdef-fedcba0987654321-01',
+        "--trace-parent",
+        "00-1234567890abcdef1234567890abcdef-fedcba0987654321-01",
     )
     context = OpenTelemetryPlugin.get_trace_parent(config)
     assert context
@@ -76,7 +76,7 @@ def test_getting_trace_id_from_environment_variable(pytester: Pytester) -> None:
     config = pytester.parseconfig()
 
     with environment(
-        TRACEPARENT='00-1234567890abcdef1234567890abcdef-fedcba0987654321-01'
+        TRACEPARENT="00-1234567890abcdef1234567890abcdef-fedcba0987654321-01"
     ):
         context = OpenTelemetryPlugin.get_trace_parent(config)
 
@@ -92,11 +92,10 @@ def test_getting_trace_id_from_environment_variable(pytester: Pytester) -> None:
 
 def test_getting_trace_id_from_worker_input(pytester: Pytester) -> None:
     config = pytester.parseconfig()
-    setattr(
-        config,
-        'workerinput',
-        {'traceparent': '00-1234567890abcdef1234567890abcdef-fedcba0987654321-01'},
-    )
+    # pytest-xdist sets this attribute on the Config of each of its workers.
+    config.workerinput = {  # pyright: ignore[reportAttributeAccessIssue]
+        "traceparent": "00-1234567890abcdef1234567890abcdef-fedcba0987654321-01"
+    }
     context = XdistOpenTelemetryPlugin.get_trace_parent(config)
     assert context
 
@@ -129,8 +128,8 @@ def test_passing_trace_id(pytester: Pytester, span_recorder: SpanRecorder) -> No
             assert span.context.span_id != 0xfedcba0987654321
     """)
     result = pytester.runpytest_subprocess(
-        '--trace-parent',
-        '00-1234567890abcdef1234567890abcdef-fedcba0987654321-01',
+        "--trace-parent",
+        "00-1234567890abcdef1234567890abcdef-fedcba0987654321-01",
     )
     result.assert_outcomes(passed=2)
 
@@ -154,10 +153,10 @@ def test_multiple_workers(pytester: Pytester, span_recorder: SpanRecorder) -> No
             assert span.context.trace_id == 0x1234567890abcdef1234567890abcdef
     """)
     result = pytester.runpytest_subprocess(
-        '-n',
-        '2',
-        '--trace-parent',
-        '00-1234567890abcdef1234567890abcdef-fedcba0987654321-01',
+        "-n",
+        "2",
+        "--trace-parent",
+        "00-1234567890abcdef1234567890abcdef-fedcba0987654321-01",
     )
     result.assert_outcomes(passed=2)
 
@@ -175,24 +174,24 @@ def test_works_without_xdist(pytester: Pytester, span_recorder: SpanRecorder) ->
             assert span.context.trace_id == 0x1234567890abcdef1234567890abcdef
     """)
     result = pytester.runpytest_subprocess(
-        '-p',
-        'no:xdist',
-        '--trace-parent',
-        '00-1234567890abcdef1234567890abcdef-fedcba0987654321-01',
+        "-p",
+        "no:xdist",
+        "--trace-parent",
+        "00-1234567890abcdef1234567890abcdef-fedcba0987654321-01",
     )
     result.assert_outcomes(passed=2)
 
 
 @pytest.mark.parametrize(
-    'args',
+    "args",
     [
         pytest.param([], id="default"),
-        pytest.param(['-n', '2'], id="xdist"),
-        pytest.param(['-p', 'no:xdist'], id='no:xdist'),
+        pytest.param(["-n", "2"], id="xdist"),
+        pytest.param(["-p", "no:xdist"], id="no:xdist"),
     ],
 )
 def test_trace_per_test(
-    pytester: Pytester, span_recorder: SpanRecorder, args: List[str]
+    pytester: Pytester, span_recorder: SpanRecorder, args: list[str]
 ) -> None:
     pytester.makepyfile("""
         from opentelemetry import trace
@@ -206,16 +205,16 @@ def test_trace_per_test(
             assert span.context.trace_id == 0x1234567890abcdef1234567890abcdef
     """)
     result = pytester.runpytest_subprocess(
-        '--trace-per-test',
+        "--trace-per-test",
         *args,
-        '--trace-parent',
-        '00-1234567890abcdef1234567890abcdef-fedcba0987654321-01',
+        "--trace-parent",
+        "00-1234567890abcdef1234567890abcdef-fedcba0987654321-01",
     )
     result.assert_outcomes(passed=2)
 
 
-@patch.object(trace, 'get_tracer_provider')
-def test_force_flush_with_supported_provider(mock_get_tracer_provider):
+@patch.object(trace, "get_tracer_provider")
+def test_force_flush_with_supported_provider(mock_get_tracer_provider: Mock) -> None:
     provider = Mock()
     provider.force_flush = Mock(return_value=None)
     mock_get_tracer_provider.return_value = provider
@@ -228,8 +227,8 @@ def test_force_flush_with_supported_provider(mock_get_tracer_provider):
         assert plugin.try_force_flush() is True
 
 
-@patch.object(trace, 'get_tracer_provider')
-def test_force_flush_with_unsupported_provider(mock_get_tracer_provider):
+@patch.object(trace, "get_tracer_provider")
+def test_force_flush_with_unsupported_provider(mock_get_tracer_provider: Mock) -> None:
     provider = Mock(spec=trace.ProxyTracerProvider)
     mock_get_tracer_provider.return_value = provider
 

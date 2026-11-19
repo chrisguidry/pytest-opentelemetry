@@ -1,11 +1,13 @@
 import subprocess
-from typing import Dict, Union
 
 from opentelemetry.sdk.resources import Resource, ResourceDetector
-from opentelemetry.semconv.resource import ResourceAttributes
+from opentelemetry.semconv.attributes.service_attributes import (
+    SERVICE_NAME,
+    SERVICE_VERSION,
+)
 from pytest import Config
 
-Attributes = Dict[str, Union[str, bool, int, float]]
+Attributes = dict[str, str | bool | int | float]
 
 
 class CodebaseResourceDetector(ResourceDetector):
@@ -20,9 +22,9 @@ class CodebaseResourceDetector(ResourceDetector):
         """Get the junit_suite_name setting, which is only available while the
         junitxml plugin is enabled"""
         try:
-            return str(self.config.getini('junit_suite_name'))
+            return str(self.config.getini("junit_suite_name"))
         except ValueError:
-            return ''
+            return ""
 
     def get_codebase_name(self) -> str:
         """Get the name of the codebase.
@@ -42,24 +44,24 @@ class CodebaseResourceDetector(ResourceDetector):
     def get_codebase_version() -> str:
         try:
             response = subprocess.check_output(
-                ['git', 'rev-parse', '--is-inside-work-tree']
+                ["git", "rev-parse", "--is-inside-work-tree"]
             )
-            if response.strip() != b'true':
-                return '[unknown: not a git repository]'
+            if response.strip() != b"true":
+                return "[unknown: not a git repository]"
         except Exception:  # pylint: disable=broad-except
-            return '[unknown: not a git repository]'
+            return "[unknown: not a git repository]"
 
         try:
-            version = subprocess.check_output(['git', 'rev-parse', 'HEAD'])
+            version = subprocess.check_output(["git", "rev-parse", "HEAD"])
         except Exception as exception:  # pylint: disable=broad-except
-            return f'[unknown: {str(exception)}]'
+            return f"[unknown: {exception!s}]"
 
         return version.decode().strip()
 
     def detect(self) -> Resource:
         return Resource(
             {
-                ResourceAttributes.SERVICE_NAME: self.get_codebase_name(),
-                ResourceAttributes.SERVICE_VERSION: self.get_codebase_version(),
+                SERVICE_NAME: self.get_codebase_name(),
+                SERVICE_VERSION: self.get_codebase_version(),
             }
         )

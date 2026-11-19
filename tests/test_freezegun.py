@@ -5,7 +5,7 @@ from _pytest.pytester import Pytester
 
 from pytest_opentelemetry.instrumentation import use_real_time_under_freezegun
 
-from . import SpanRecorder
+from . import SpanRecorder, end_time, start_time
 
 
 def test_spans_keep_real_time_while_time_is_frozen(
@@ -30,19 +30,19 @@ def test_spans_keep_real_time_while_time_is_frozen(
     pytester.runpytest().assert_outcomes(passed=1)
 
     spans = span_recorder.spans_by_name()
-    test = spans['test_spans_keep_real_time_while_time_is_frozen.py::test_one']
+    test = spans["test_spans_keep_real_time_while_time_is_frozen.py::test_one"]
     within_test = [
-        spans['frozen setup'],
-        spans['test_spans_keep_real_time_while_time_is_frozen.py::test_one::call'],
-        spans['inside'],
-        spans['frozen teardown'],
+        spans["frozen setup"],
+        spans["test_spans_keep_real_time_while_time_is_frozen.py::test_one::call"],
+        spans["inside"],
+        spans["frozen teardown"],
     ]
     assert all(
-        test.start_time <= span.start_time <= span.end_time <= test.end_time
+        start_time(test) <= start_time(span) <= end_time(span) <= end_time(test)
         for span in within_test
     )
 
 
 def test_freezegun_is_optional(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setitem(sys.modules, 'freezegun', None)
+    monkeypatch.setitem(sys.modules, "freezegun", None)
     use_real_time_under_freezegun()
