@@ -12,7 +12,6 @@ from _pytest.reports import TestReport
 from _pytest.runner import CallInfo
 from opentelemetry import propagate, trace
 from opentelemetry.context.context import Context
-from opentelemetry.sdk.resources import OTELResourceDetector, ResourceDetector
 from opentelemetry.semconv._incubating.attributes.code_attributes import (  # pyright: ignore[reportMissingTypeStubs]
     CODE_FILEPATH,
     CODE_FUNCTION,
@@ -20,12 +19,8 @@ from opentelemetry.semconv._incubating.attributes.code_attributes import (  # py
 )
 from opentelemetry.semconv.attributes.exception_attributes import EXCEPTION_STACKTRACE
 from opentelemetry.trace import Span, Status, StatusCode, Tracer
-from opentelemetry_container_distro import (
-    OpenTelemetryContainerConfigurator,
-    OpenTelemetryContainerDistro,
-)
 
-from .resource import CodebaseResourceDetector
+from .provider import build_tracer_provider
 
 if TYPE_CHECKING:
     from xdist.workermanage import (  # pyright: ignore[reportMissingTypeStubs]
@@ -90,15 +85,7 @@ class PerTestOpenTelemetryPlugin:
 
         use_real_time_under_freezegun()
 
-        # This can't be tested both ways in one process
-        if config.getoption("--export-traces"):  # pragma: no cover
-            OpenTelemetryContainerDistro().configure()  # pyright: ignore[reportUnknownMemberType]
-
-        configurator = OpenTelemetryContainerConfigurator()
-        detectors: list[ResourceDetector] = configurator.resource_detectors  # pyright: ignore[reportAssignmentType]
-        detectors.append(CodebaseResourceDetector(config))
-        detectors.append(OTELResourceDetector())
-        configurator.configure()  # pyright: ignore[reportUnknownMemberType]
+        trace.set_tracer_provider(build_tracer_provider(config))
 
     def pytest_sessionfinish(self, session: Session) -> None:
         self.try_force_flush()

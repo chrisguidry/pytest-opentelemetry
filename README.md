@@ -56,7 +56,25 @@ export OTEL_EXPORTER_OTLP_ENDPOINT=http://another.collector:4317
 pytest --export-traces
 ```
 
-Only the OTLP over gRPC exporter is currently supported.
+OTLP over gRPC is the default exporter, and the only one that `pytest-opentelemetry`
+installs.  To use another, install its package and name it in `OTEL_TRACES_EXPORTER`,
+as you would for any OpenTelemetry SDK.  For example, to export OTLP over HTTP:
+
+```bash
+pip install opentelemetry-exporter-otlp-proto-http
+export OTEL_TRACES_EXPORTER=otlp_proto_http
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://another.collector:4318
+pytest --export-traces
+```
+
+To describe where the tests ran, install the `container` extra.  It adds
+[`opentelemetry-container-distro`](https://pypi.org/project/opentelemetry-container-distro/),
+and `pytest-opentelemetry` then records the `process.*` attributes of the pytest
+process, and the Docker container and Kubernetes pod when it runs in one:
+
+```bash
+pip install 'pytest-opentelemetry[container]'
+```
 
 `pytest-opentelemetry` will use the name of the project's directory as the OpenTelemetry
 `service.name`, but it will also respect the standard `OTEL_SERVICE_NAME` and

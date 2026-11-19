@@ -25,14 +25,18 @@ classifiers = [
 ]
 dependencies = [
     "opentelemetry-api",
-    "opentelemetry-container-distro",
+    "opentelemetry-exporter-otlp-proto-grpc",
     "opentelemetry-sdk",
     "opentelemetry-semantic-conventions",
     "pytest",
 ]
 
+[project.optional-dependencies]
+container = ["opentelemetry-container-distro"]
+
 [dependency-groups]
 dev = [
+    "pytest-opentelemetry[container]",
     "codespell>=2.4.1",
     "freezegun>=1.5.0",
     "loq>=0.1.0a3",
