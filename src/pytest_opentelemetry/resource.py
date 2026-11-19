@@ -51,9 +51,12 @@ class CodebaseResourceDetector(ResourceDetector):
 
     @staticmethod
     def get_codebase_version() -> str:
+        # git explains each failure on stderr, which would print on every test
+        # run outside a repository.  The returned version says what failed.
         try:
             response = subprocess.check_output(
-                ["git", "rev-parse", "--is-inside-work-tree"]
+                ["git", "rev-parse", "--is-inside-work-tree"],
+                stderr=subprocess.DEVNULL,
             )
             if response.strip() != b"true":
                 return "[unknown: not a git repository]"
@@ -61,7 +64,9 @@ class CodebaseResourceDetector(ResourceDetector):
             return "[unknown: not a git repository]"
 
         try:
-            version = subprocess.check_output(["git", "rev-parse", "HEAD"])
+            version = subprocess.check_output(
+                ["git", "rev-parse", "HEAD"], stderr=subprocess.DEVNULL
+            )
         except Exception as exception:  # pylint: disable=broad-except
             return f"[unknown: {exception!s}]"
 
