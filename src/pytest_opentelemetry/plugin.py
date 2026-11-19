@@ -42,9 +42,14 @@ def pytest_configure(config: Config) -> None:
         XdistOpenTelemetryPlugin,
     )
 
+    plugin: PerTestOpenTelemetryPlugin
     if config.getvalue('--trace-per-test'):
-        config.pluginmanager.register(PerTestOpenTelemetryPlugin())
+        plugin = PerTestOpenTelemetryPlugin()
     elif config.pluginmanager.has_plugin("xdist"):
-        config.pluginmanager.register(XdistOpenTelemetryPlugin())
+        plugin = XdistOpenTelemetryPlugin()
     else:
-        config.pluginmanager.register(OpenTelemetryPlugin())
+        plugin = OpenTelemetryPlugin()
+
+    # The name lets other plugins and conftest files find this object with
+    # config.pluginmanager.get_plugin('opentelemetry').
+    config.pluginmanager.register(plugin, 'opentelemetry')
