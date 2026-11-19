@@ -1,4 +1,5 @@
 import os
+from types import CodeType
 from typing import Any, Dict, Iterator, Optional, Union
 
 import pytest
@@ -99,13 +100,27 @@ class PerTestOpenTelemetryPlugin:
     def _attributes_from_fixturedef(
         self, fixturedef: FixtureDef
     ) -> Dict[str, Union[str, int]]:
-        return {
-            SpanAttributes.CODE_FILEPATH: fixturedef.func.__code__.co_filename,
+        attributes: Dict[str, Union[str, int]] = {
             SpanAttributes.CODE_FUNCTION: fixturedef.argname,
-            SpanAttributes.CODE_LINENO: fixturedef.func.__code__.co_firstlineno,
             "pytest.fixture_scope": fixturedef.scope,
             "pytest.span_type": "fixture",
         }
+        if code := self._code_from_fixturedef(fixturedef):
+            attributes[SpanAttributes.CODE_FILEPATH] = code.co_filename
+            attributes[SpanAttributes.CODE_LINENO] = code.co_firstlineno
+        return attributes
+
+    @staticmethod
+    def _code_from_fixturedef(fixturedef: FixtureDef) -> Optional[CodeType]:
+        """Finds the Python code that a fixture runs, when there is any.
+
+        pytest accepts any callable as a fixture.  A function has its own code,
+        an instance of a class with a `__call__` method has that method's code,
+        and a callable implemented in C has none."""
+        for candidate in (fixturedef.func, type(fixturedef.func).__call__):
+            if code := getattr(candidate, '__code__', None):
+                return code
+        return None
 
     def _name_from_fixturedef(self, fixturedef: FixtureDef, request: FixtureRequest):
         if fixturedef.params and 'request' in fixturedef.argnames:
