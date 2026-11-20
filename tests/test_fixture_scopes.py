@@ -56,13 +56,16 @@ def test_wider_fixtures_are_siblings_of_the_tests(
         def wide():
             yield
 
-        def test_one(wide):
-            pass
+        class TestThings:
+            def test_one(self, wide):
+                pass
     """)
     pytester.runpytest(*args).assert_outcomes(passed=1)
 
     spans = span_recorder.spans_by_name()
-    test = spans["test_wider_fixtures_are_siblings_of_the_tests.py::test_one"]
+    test = spans[
+        "test_wider_fixtures_are_siblings_of_the_tests.py::TestThings::test_one"
+    ]
     assert parent_id(spans["wide setup"]) == parent_id(test)
     assert parent_id(spans["wide teardown"]) == parent_id(test)
 
@@ -149,8 +152,8 @@ def test_fixture_torn_down_for_its_next_parameter(
 def test_fixtures_torn_down_after_the_run_stops_early(
     pytester: Pytester, span_recorder: SpanRecorder
 ) -> None:
-    # When -x stops a run, pytest tears down the fixtures that are still set up
-    # as the session finishes, after the last test.
+    # When a failure makes -x stop the run, pytest tears down every fixture in
+    # the teardown of the test that failed.
     pytester.makepyfile("""
         import pytest
 
@@ -195,3 +198,83 @@ def test_fixture_first_requested_inside_a_test_is_inside_that_test(
         "::test_one::call"
     ]
     assert parent_id(spans["session_scoped setup"]) == span_id(call)
+
+
+@pytest.mark.parametrize(
+    "source, fixture",
+    [
+        pytest.param(
+            """
+            import pytest
+
+            @pytest.fixture(scope='class')
+            def per_class():
+                yield
+
+            def test_one(per_class):
+                pass
+            """,
+            "per_class",
+            id="class-fixture-of-a-plain-function",
+        ),
+        pytest.param(
+            """
+            import pytest
+
+            @pytest.fixture(scope='module')
+            def server(request):
+                yield request.param
+
+            @pytest.mark.parametrize(
+                'server, header', [('a', 1)], indirect=['server']
+            )
+            def test_one(server, header):
+                pass
+            """,
+            "server",
+            id="fixture-parametrized-along-with-a-plain-argument",
+        ),
+    ],
+)
+def test_fixture_that_pytest_binds_to_one_test_is_inside_that_test(
+    pytester: Pytester, span_recorder: SpanRecorder, source: str, fixture: str
+) -> None:
+    # pytest sets up and tears down these fixtures for every test, whatever
+    # scope they declare.
+    pytester.makepyfile(source)
+    pytester.runpytest().assert_outcomes(passed=1)
+
+    spans = span_recorder.spans_by_name()
+    node = "test_fixture_that_pytest_binds_to_one_test_is_inside_that_test.py::test_one"
+    assert parent_id(spans[f"{fixture} setup"]) == span_id(spans[f"{node}::setup"])
+    assert parent_id(spans[f"{fixture} teardown"]) == span_id(
+        spans[f"{node}::teardown"]
+    )
+
+
+def test_fixtures_torn_down_after_the_run_stops_inside_a_test(
+    pytester: Pytester, span_recorder: SpanRecorder
+) -> None:
+    # pytest.exit() and Ctrl-C end a test without its teardown, and pytest then
+    # tears down every fixture as the session finishes.
+    pytester.makepyfile("""
+        import pytest
+
+        @pytest.fixture(scope='session')
+        def session_scoped():
+            yield
+
+        @pytest.fixture
+        def function_scoped():
+            yield
+
+        def test_one(session_scoped, function_scoped):
+            pytest.exit('enough')
+    """)
+    assert pytester.runpytest().ret == pytest.ExitCode.INTERRUPTED
+
+    spans = span_recorder.spans_by_name()
+    test_run = spans["test run"]
+    assert parent_id(spans["function_scoped teardown"]) == span_id(test_run)
+    assert parent_id(spans["session_scoped teardown"]) == span_id(test_run)
+    assert end_time(spans["session_scoped teardown"]) <= end_time(test_run)

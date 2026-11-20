@@ -14,8 +14,8 @@ from opentelemetry.semconv._incubating.attributes.code_attributes import (  # py
 from opentelemetry.trace import Span, Status, StatusCode, Tracer
 from pluggy import Result
 
-from .items import Attributes, ItemSpans
-from .parameters import parameter_attribute
+from .attributes import Attributes, parameter_attribute
+from .items import ItemSpans
 
 # Stands for the parameter of a fixture that has none, because None can be a
 # fixture's parameter.

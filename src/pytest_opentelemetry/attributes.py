@@ -1,3 +1,5 @@
+Attributes = dict[str, str | bool | int | float]
+
 # The longest a parameter's value may be in a span attribute, in characters.
 MAX_PARAMETER_LENGTH = 120
 

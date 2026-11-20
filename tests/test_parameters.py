@@ -232,3 +232,23 @@ def test_unparametrized_fixtures_have_no_parameter_attributes(
     attributes = span_recorder.spans_by_name()["plain setup"].attributes
     assert attributes
     assert not [key for key in attributes if key.startswith("pytest.param.")]
+
+
+def test_fixture_parameter_of_none_becomes_an_attribute(
+    pytester: Pytester, span_recorder: SpanRecorder
+) -> None:
+    pytester.makepyfile("""
+        import pytest
+
+        @pytest.fixture(params=[None])
+        def nothing(request):
+            return request.param
+
+        def test_one(nothing):
+            pass
+    """)
+    pytester.runpytest().assert_outcomes(passed=1)
+
+    attributes = span_recorder.spans_by_name()["nothing setup"].attributes
+    assert attributes
+    assert attributes["pytest.param.nothing"] == "None"

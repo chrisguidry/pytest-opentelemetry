@@ -2,7 +2,7 @@ import pytest
 from _pytest.pytester import Pytester
 from opentelemetry.trace import SpanKind
 
-from . import SpanRecorder, parent_id, span_id, trace_id
+from . import SpanRecorder, parent_id, span_id, start_time, trace_id
 
 
 def test_simple_pytest_functions(
@@ -345,3 +345,25 @@ def test_test_that_another_plugin_runs_twice(
     assert {parent_id(fixture) for fixture in fixtures} == {
         span_id(setup) for setup in setups
     }
+
+
+def test_test_span_covers_the_setup_hooks_of_other_plugins(
+    pytester: Pytester, span_recorder: SpanRecorder
+) -> None:
+    pytester.makeconftest("""
+        from opentelemetry import trace
+
+        def pytest_runtest_setup(item):
+            with trace.get_tracer('inside').start_as_current_span('in a hook'):
+                pass
+    """)
+    pytester.makepyfile("""
+        def test_one():
+            pass
+    """)
+    pytester.runpytest().assert_outcomes(passed=1)
+
+    spans = span_recorder.spans_by_name()
+    node = "test_test_span_covers_the_setup_hooks_of_other_plugins.py::test_one"
+    assert start_time(spans[node]) <= start_time(spans["in a hook"])
+    assert start_time(spans[f"{node}::setup"]) <= start_time(spans["in a hook"])

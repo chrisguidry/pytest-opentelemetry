@@ -14,9 +14,7 @@ from opentelemetry.semconv._incubating.attributes.code_attributes import (  # py
 )
 from opentelemetry.trace import Span, Tracer
 
-from .parameters import parameter_attribute
-
-Attributes = dict[str, str | bool | int | float]
+from .attributes import Attributes, parameter_attribute
 
 
 def function_name(item: Item) -> str:

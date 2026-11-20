@@ -33,6 +33,9 @@ def test_fixture_that_raises_records_its_own_error(
     test = spans["test_fixture_that_raises_records_its_own_error.py::test_one"]
     assert test.status.status_code == StatusCode.ERROR
 
+    # The fixture never set up, so it has nothing to tear down.
+    assert "broken teardown" not in spans
+
 
 @pytest.mark.parametrize(
     "outcome, expected",
