@@ -252,3 +252,52 @@ def test_fixture_parameter_of_none_becomes_an_attribute(
     attributes = span_recorder.spans_by_name()["nothing setup"].attributes
     assert attributes
     assert attributes["pytest.param.nothing"] == "None"
+
+
+@pytest.mark.parametrize(
+    "source, span",
+    [
+        pytest.param(
+            """
+            import pytest
+
+            class Unprintable:
+                def __repr__(self):
+                    raise ValueError('nope')
+
+            @pytest.mark.parametrize('thing', [Unprintable()])
+            def test_one(thing):
+                pass
+            """,
+            "test_parameter_whose_repr_raises_does_not_stop_the_run.py::test_one",
+            id="parameter-of-a-test",
+        ),
+        pytest.param(
+            """
+            import pytest
+
+            class Unprintable:
+                def __repr__(self):
+                    raise ValueError('nope')
+
+            @pytest.fixture(params=[Unprintable()])
+            def thing(request):
+                return request.param
+
+            def test_one(thing):
+                pass
+            """,
+            "thing setup",
+            id="parameter-of-a-fixture",
+        ),
+    ],
+)
+def test_parameter_whose_repr_raises_does_not_stop_the_run(
+    pytester: Pytester, span_recorder: SpanRecorder, source: str, span: str
+) -> None:
+    pytester.makepyfile(source)
+    pytester.runpytest().assert_outcomes(passed=1)
+
+    attributes = span_recorder.spans_by_name()[span].attributes
+    assert attributes
+    assert "Unprintable object at 0x" in str(attributes["pytest.param.thing"])
