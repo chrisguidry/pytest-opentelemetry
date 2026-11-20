@@ -97,8 +97,8 @@ class PerTestOpenTelemetryPlugin:
 
     @pytest.hookimpl(hookwrapper=True)
     def pytest_sessionfinish(self, session: Session) -> Iterator[None]:
-        # When a run stops before its last test, as it does with -x, pytest
-        # tears down here the fixtures that are still set up.
+        # When a test stops the whole run, as pytest.exit() and Ctrl-C do,
+        # pytest tears down here the fixtures that are still set up.
         with self.outside_tests():
             yield
         self.end_run()
@@ -112,9 +112,14 @@ class PerTestOpenTelemetryPlugin:
             yield
 
     @pytest.hookimpl(hookwrapper=True)
-    def pytest_runtest_setup(self, item: Item) -> Iterator[None]:
-        with self._item_spans.setting_up():
-            yield
+    def pytest_runtest_setup(self, item: Item) -> Generator[None, Result[object], None]:
+        with self._item_spans.setting_up(item):
+            outcome = yield
+            # A test without fixtures gets the finalizer here.  A setup that
+            # failed may have stopped before pytest reached the test, as it
+            # does for a skip mark, and pytest then takes no finalizer for it.
+            if outcome.exception is None:
+                self._item_spans.mark_teardown()
 
     @pytest.hookimpl(hookwrapper=True)
     def pytest_fixture_setup(
@@ -166,6 +171,10 @@ class PerTestOpenTelemetryPlugin:
 
         has_error = report.outcome == "failed"
         status_code = StatusCode.ERROR if has_error else StatusCode.OK
+        # The test's span has not started when another plugin runs the test
+        # somewhere else and only reports on it here, and the current span is
+        # then the parent of the tests.
+        self._item_spans.start_deferred()
         trace.get_current_span().set_status(status_code)
 
 

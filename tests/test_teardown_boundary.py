@@ -88,10 +88,11 @@ def test_one():
     assert end_time(test) <= start_time(spans["leaving"])
 
 
-def test_test_after_one_that_ended_early_has_its_own_end(
+def test_skipped_test_after_one_that_ended_early_has_its_own_end(
     pytester: Pytester, span_recorder: SpanRecorder
 ) -> None:
     # The first test's span ends when its class's fixture starts to tear down.
+    # pytest never sets the second test up, so nothing ends its span early.
     pytester.makepyfile("""
         import pytest
 
@@ -103,11 +104,14 @@ def test_test_after_one_that_ended_early_has_its_own_end(
             def test_one(self, class_scoped):
                 pass
 
+        @pytest.mark.skip
         def test_two():
             pass
     """)
-    pytester.runpytest().assert_outcomes(passed=2)
+    pytester.runpytest().assert_outcomes(passed=1, skipped=1)
 
     spans = span_recorder.spans_by_name()
-    test = spans["test_test_after_one_that_ended_early_has_its_own_end.py::test_two"]
+    test = spans[
+        "test_skipped_test_after_one_that_ended_early_has_its_own_end.py::test_two"
+    ]
     assert start_time(test) <= end_time(test)

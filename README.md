@@ -111,10 +111,10 @@ A test run is one trace.  Its root is a span named `test run`, and its children 
 ```
 test run
 ├─ collection
-├─ database setup                                a session-scoped fixture
+├─ database setup                                a fixture that tests share
 ├─ tests/test_api.py::test_health
 │  ├─ tests/test_api.py::test_health::setup
-│  │  └─ client setup                            a function-scoped fixture
+│  │  └─ client setup                            a fixture of this test
 │  ├─ tests/test_api.py::test_health::call
 │  └─ tests/test_api.py::test_health::teardown
 │     └─ client teardown
@@ -122,32 +122,47 @@ test run
 ```
 
 Each fixture has a `<name> setup` span and a `<name> teardown` span.  The spans that your
-code creates while a fixture sets up or tears down are children of those spans.  A
-fixture whose setup raises records the exception on its setup span, and on the span of
-the test that asked for it.
+code creates while a fixture sets up or tears down are children of those spans.
 
-The spans of a function-scoped fixture are inside the test that uses it.  The spans of a
-fixture with a class, module, package, or session scope are children of the test run.
-pytest sets up such a fixture during the first test that uses it, and tears it down
-during the last, but neither test's span includes that time: a test's span starts after
-pytest has set up those fixtures, and ends before pytest tears them down.  The duration
-of a test is then the time of the test and of its function-scoped fixtures, wherever the
-test falls in its module.
+The spans of a fixture that pytest sets up for one test are inside that test.  The spans
+of a fixture that tests share are children of the test run.  pytest sets up a shared
+fixture during the first test that uses it, and tears it down during the last, but
+neither test's span includes that time: a test's span starts after pytest has set up
+those fixtures, and ends when pytest has torn down the test itself, before it tears them
+down.  The duration of a test is then the time of the test and of its own fixtures,
+wherever the test falls in its module.
 
-Three things do not follow that layout:
+What a fixture's scope says and what pytest does can differ.  pytest sets up a
+class-scoped fixture for every test that is not in a class, and it sets up a fixture for
+every test that parametrizes it along with a plain argument.  The spans of those
+fixtures are inside each test.
 
-* A fixture that a test first asks for with `request.getfixturevalue()` sets up in the
-  middle of that test, whatever its scope.  Its setup span is inside the test, and its
-  time counts toward the test's duration.
-* A finalizer that is added to a fixture after the fixture has set up, like a
-  `request.addfinalizer` call that a test makes, runs before that fixture's teardown
-  span starts.
-* The spans that a `pytest_runtest_setup` hook creates are children of the test run,
-  because pytest calls those hooks before the test's span starts.
+A fixture whose setup raises records the exception on its setup span, and on the span of
+the test that asked for it.  An error in a fixture's teardown is recorded only on the
+span of the test that pytest reports it for.
+
+Some things do not follow that layout:
+
+* A shared fixture that pytest sets up after one of the test's own fixtures sets up in
+  the middle of that test.  Its setup span is inside the test, and its time counts
+  toward the test's duration.  This happens to a fixture that a test first asks for with
+  `request.getfixturevalue()`, and to a fixture that another fixture of the same name
+  overrides and depends on.
+* A finalizer that is added to a fixture after the fixture has set up, like the one a
+  factory fixture adds each time a test calls it, runs before that fixture's teardown
+  span starts.  For a shared fixture it runs as a child of the test run, outside of any
+  test.
+* The spans that a `pytest_runtest_setup` or `pytest_runtest_logstart` hook creates are
+  children of the test run.  The test's span covers their time, but it does not exist
+  yet when pytest calls those hooks.
+* With [`pytest-asyncio`](https://pypi.org/project/pytest-asyncio/), the spans that an
+  async fixture creates while it tears down are children of its setup span, because
+  the fixture resumes in the context it set up in.
 
 With `--trace-per-test` there is no `test run` span.  Each test is the root of a trace
-of its own, and so is each setup and each teardown of a fixture with a wider scope than
-one test.  When there is a `--trace-parent`, they are children of that parent instead.
+of its own, and so is everything that is a child of the test run above: each setup and
+each teardown of a shared fixture, and each span from one of those hooks.  When there
+is a `--trace-parent`, they are children of that parent instead.
 
 ## Parametrized tests
 
@@ -157,14 +172,14 @@ tool that groups spans by name then reports them together.  The `pytest.nodeid`
 attribute of each span has the whole node ID, like
 `tests/test_api.py::test_login[bearer]`.
 
-The spans of a parametrized test carry each of its parameters as an attribute named
+The spans of a parametrized test have each of its parameters as an attribute named
 `pytest.param.<name>`, from `@pytest.mark.parametrize`, a fixture's `params`, or a
 [tavern](https://pypi.org/project/tavern/) test's `parametrize` mark.  A string, a
 boolean, or a number keeps its value, and any other value becomes its `repr()`.  A value
 longer than 120 characters keeps its start and its end, with `…` in place of the middle.
 
 The setup and teardown spans of a fixture with a parameter have the same name for every
-parameter, and carry the parameter as `pytest.param.<name of the fixture>`.
+parameter, and have the parameter as `pytest.param.<name of the fixture>`.
 
 ## Working with other plugins
 

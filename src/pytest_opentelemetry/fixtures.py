@@ -33,11 +33,11 @@ def trace_fixture(
 
     Each span is current while its half of the fixture runs, so the spans that
     the fixture creates are its children.  A span's parent is the span that is
-    current when it starts.  For a fixture of the function scope that is the
-    setup or the teardown span of the test, and for a fixture of a wider scope
-    it is the parent of the tests, because `ItemSpans` keeps the test's spans
-    from being current while pytest sets those fixtures up and tears them
-    down."""
+    current when it starts.  For a fixture that pytest sets up for one test,
+    that is the setup or the teardown span of the test.  For a fixture that
+    tests share, it is the parent of the tests, because `ItemSpans` keeps the
+    test's spans from being current while pytest sets those fixtures up and
+    tears them down."""
     # pytest gives each argument of a parametrized test to the test through a
     # fixture that only returns the argument, which the test's spans have as
     # an attribute.
@@ -47,34 +47,33 @@ def trace_fixture(
 
     name = fixturedef.argname
     attributes = fixture_attributes(fixturedef, request)
-    of_one_test = fixturedef.scope == "function"
     teardown = ExitStack()
 
     def start_teardown() -> None:
-        if not of_one_test:
-            item_spans.stop()
         teardown.enter_context(
             tracer.start_as_current_span(f"{name} teardown", attributes=attributes)
         )
-
-    def end_teardown() -> None:
-        teardown.close()
-        item_spans.postpone()
 
     # pytest has no hook for the start of a fixture's teardown, but it runs a
     # fixture's finalizers from the last one added to the first.  These two go
     # on before and after everything the fixture itself adds while it sets up,
     # so they run after and before the fixture's own teardown.
-    request.addfinalizer(end_teardown)
+    request.addfinalizer(teardown.close)
 
-    if of_one_test:
-        item_spans.start()
+    item_spans.mark_teardown()
+    # The scope that a fixture declares does not say whether tests share it.
+    # pytest sets up a class-scoped fixture for each test that is not in a
+    # class, and the node of the request is then the test itself.
+    if isinstance(request.node, pytest.Item):
+        item_spans.start_deferred()
     with tracer.start_as_current_span(f"{name} setup", attributes=attributes) as span:
         outcome = yield
         record_error(span, outcome.exception)
     item_spans.postpone()
 
-    request.addfinalizer(start_teardown)
+    # A fixture that did not set up has no teardown of its own.
+    if outcome.exception is None:
+        request.addfinalizer(start_teardown)
 
 
 def fixture_attributes(fixturedef: FixtureDef[Any], request: SubRequest) -> Attributes:

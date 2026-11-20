@@ -84,7 +84,7 @@ class ItemSpans:
     the test, and under it one each for its setup, its call, and its teardown.
 
     The spans of a test cover only that test's own work.  pytest sets up a
-    fixture of a wider scope at the start of the setup of the first test that
+    fixture that tests share at the start of the setup of the first test that
     uses it, and tears it down at the end of the teardown of the last.  So the
     test's span and its setup span start after pytest has set those fixtures
     up, and the test's span and its teardown span end before pytest tears them
@@ -102,17 +102,20 @@ class ItemSpans:
 
         # The names of the spans that have yet to start, outermost first, and
         # the time that they will start at.
-        self._waiting: list[str] = []
+        self._deferred: list[str] = []
         self._since = 0
 
         self._started: list[tuple[Span, Token[Context]]] = []
+
+        # The test that is setting up, until it has the finalizer that ends
+        # its teardown.
+        self._unmarked: Item | None = None
 
         # The time that the test's span ends at, when that is before the
         # moment pytest finishes with the test.
         self._ended_at: int | None = None
 
         self._teardown = ExitStack()
-        self._tearing_down = False
 
     @contextmanager
     def running(self, item: Item) -> Generator[None, None, None]:
@@ -121,14 +124,16 @@ class ItemSpans:
         self._attributes = item_attributes(item)
         self._outside = context.get_current()
         self._ended_at = None
-        self._wait(self._name)
+        self._defer(self._name)
         yield
         self._end(self._ended_at)
 
     @contextmanager
-    def setting_up(self) -> Generator[None, None, None]:
-        self._wait(f"{self._name}::setup")
+    def setting_up(self, item: Item) -> Generator[None, None, None]:
+        self._defer(f"{self._name}::setup")
+        self._unmarked = item
         yield
+        self._unmarked = None
         self._end()
 
     @contextmanager
@@ -140,56 +145,65 @@ class ItemSpans:
 
     @contextmanager
     def tearing_down(self) -> Generator[None, None, None]:
-        self._ended_at = None
         with self._teardown:
             self._teardown.enter_context(
                 self._tracer.start_as_current_span(
                     f"{self._name}::teardown", attributes=self._attributes
                 )
             )
-            self._tearing_down = True
             yield
-            self._tearing_down = False
 
-    def start(self) -> None:
+    def start_deferred(self) -> None:
         """Starts the spans that have yet to start, because the test's own work
-        is about to.  They start at the time that work could first have
-        started: when the setup began, or when the last fixture before it
-        finished."""
-        for name in self._waiting:
+        is about to, or pytest is about to report on the test.  They start at
+        the time that work could first have started: when the setup began, or
+        when the last fixture before it finished."""
+        for name in self._deferred:
             span = self._tracer.start_span(
                 name, attributes=self._attributes, start_time=self._since
             )
             token = context.attach(trace.set_span_in_context(span))
             self._started.append((span, token))
-        self._waiting.clear()
+        self._deferred.clear()
 
     def postpone(self) -> None:
         """Moves the time that the spans yet to start will start at to now,
         because what ran until now was not the test's own work."""
         self._since = time.time_ns()
 
-    def stop(self) -> None:
-        """Ends the test's teardown, because what pytest tears down from now on
-        outlived the test.  The test's span ends at this time too, and stays
-        open for pytest to report on the test.
+    def mark_teardown(self) -> None:
+        """Adds the finalizer that ends the test's teardown to the test, when
+        the test is setting up and does not have it yet.
 
-        Outside of a test's teardown there is nothing to end: a fixture that
-        pytest tears down during a test's setup or call does so before the
-        test's own work, or as a part of it."""
-        if not self._tearing_down:
+        pytest runs the finalizers of a test from the last one added to the
+        first, and then tears down what outlived the test.  This one has to be
+        the first that the test gets, so call this before each fixture sets
+        up, and once pytest has set the test up.  pytest takes a finalizer
+        only for a test that it is setting up or has set up."""
+        if (item := self._unmarked) is None:
             return
-        self._tearing_down = False
+        self._unmarked = None
+        item.addfinalizer(self.end_teardown)
+
+    def end_teardown(self) -> None:
+        """Ends the test's teardown span, because what pytest tears down from
+        now on outlived the test.  The test's span ends at this time too, and
+        stays open for pytest to report on the test.
+
+        The parent of the tests is current from here to the end of the
+        teardown.  When a test stopped the whole run with pytest.exit() or
+        Ctrl-C, pytest tears the test down as the session finishes, where
+        there is no teardown span to end and that parent is current already."""
         self._teardown.close()
         self._ended_at = time.time_ns()
         self._teardown.enter_context(use_context(self._outside))
 
-    def _wait(self, name: str) -> None:
-        self._waiting.append(name)
+    def _defer(self, name: str) -> None:
+        self._deferred.append(name)
         self._since = time.time_ns()
 
     def _end(self, end_time: int | None = None) -> None:
-        self.start()
+        self.start_deferred()
         span, token = self._started.pop()
         context.detach(token)
         span.end(end_time)
