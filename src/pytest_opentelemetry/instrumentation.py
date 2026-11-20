@@ -29,6 +29,26 @@ if TYPE_CHECKING:
 
 tracer: Tracer = trace.get_tracer("pytest-opentelemetry")
 
+# The longest a parameter's value may be in a span attribute, in characters.
+MAX_PARAMETER_LENGTH = 120
+
+
+def parameter_attribute(value: object) -> str | bool | int | float:
+    """Gives a test parameter's value as a span attribute.
+
+    OpenTelemetry takes only strings, booleans, and numbers as attribute
+    values, so any other value becomes its `repr()`.  A string longer than
+    `MAX_PARAMETER_LENGTH` keeps its start and its end, with an ellipsis in
+    place of the middle."""
+    if isinstance(value, bool | int | float):
+        return value
+    text = value if isinstance(value, str) else repr(value)
+    if len(text) <= MAX_PARAMETER_LENGTH:
+        return text
+    head = MAX_PARAMETER_LENGTH // 2
+    tail = MAX_PARAMETER_LENGTH - head - 1
+    return f"{text[:head]}…{text[-tail:]}"
+
 
 def use_real_time_under_freezegun() -> None:
     """Tells freezegun, when it is installed, to give OpenTelemetry the real time.
@@ -90,9 +110,9 @@ class PerTestOpenTelemetryPlugin:
     def pytest_sessionfinish(self, session: Session) -> None:
         self.try_force_flush()
 
-    def _attributes_from_item(self, item: Item) -> dict[str, str | int]:
+    def _attributes_from_item(self, item: Item) -> dict[str, str | bool | int | float]:
         filepath, line_number, _ = item.location
-        attributes: dict[str, str | int] = {
+        attributes: dict[str, str | bool | int | float] = {
             CODE_FILEPATH: filepath,
             CODE_FUNCTION: item.name,
             "pytest.nodeid": item.nodeid,
@@ -101,7 +121,22 @@ class PerTestOpenTelemetryPlugin:
         # In some cases like tavern, line_number can be 0
         if line_number:
             attributes[CODE_LINENO] = line_number
+        for name, value in self._parameters_from_item(item).items():
+            attributes[f"pytest.param.{name}"] = parameter_attribute(value)
         return attributes
+
+    @staticmethod
+    def _parameters_from_item(item: Item) -> dict[str, object]:
+        """Finds the values that a test was parametrized with.
+
+        pytest keeps them in the `callspec` of a parametrized function, both
+        from `@pytest.mark.parametrize` and from a fixture's `params`, and
+        tavern keeps them in `parametrize_vars` on its YAML tests."""
+        parameters: dict[str, object] = {}
+        if callspec := getattr(item, "callspec", None):
+            parameters.update(callspec.params)
+        parameters.update(getattr(item, "parametrize_vars", {}))
+        return parameters
 
     @pytest.hookimpl(hookwrapper=True)
     def pytest_runtest_protocol(self, item: Item) -> Iterator[None]:
