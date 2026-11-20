@@ -17,7 +17,7 @@ from opentelemetry.trace import Span, Status, StatusCode, Tracer
 from pluggy import Result
 
 from .fixtures import trace_fixture
-from .items import ItemSpans, use_context
+from .items import ItemSpans, record_error, use_context
 from .provider import build_tracer_provider
 
 if TYPE_CHECKING:
@@ -133,9 +133,14 @@ class PerTestOpenTelemetryPlugin:
             yield
 
     @pytest.hookimpl(hookwrapper=True)
-    def pytest_runtest_teardown(self, item: Item) -> Iterator[None]:
-        with self._item_spans.tearing_down():
-            yield
+    def pytest_runtest_teardown(
+        self, item: Item
+    ) -> Generator[None, Result[object], None]:
+        with self._item_spans.tearing_down() as teardown:
+            outcome = yield
+            # The test's own span keeps the status of its call, so the
+            # teardown span is where the trace shows that the teardown failed.
+            record_error(teardown, outcome.exception)
 
     @staticmethod
     def pytest_exception_interact(

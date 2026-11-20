@@ -138,8 +138,9 @@ every test that parametrizes it along with a plain argument.  The spans of those
 fixtures are inside each test.
 
 A fixture whose setup raises records the exception on its setup span, and on the span of
-the test that asked for it.  An error in a fixture's teardown is recorded only on the
-span of the test that pytest reports it for.
+the test that asked for it.  An error in a fixture's teardown is recorded on the
+`::teardown` span of the test that pytest reports it for, which for a shared fixture is
+the last test that used it.  That test's own span keeps the status of its call.
 
 Some things do not follow that layout:
 

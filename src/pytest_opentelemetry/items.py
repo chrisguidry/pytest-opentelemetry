@@ -12,7 +12,7 @@ from opentelemetry.semconv._incubating.attributes.code_attributes import (  # py
     CODE_FUNCTION,
     CODE_LINENO,
 )
-from opentelemetry.trace import Span, Tracer
+from opentelemetry.trace import Span, Status, StatusCode, Tracer
 
 from .attributes import Attributes, parameter_attribute
 
@@ -77,6 +77,22 @@ def use_context(current: Context) -> Generator[None, None, None]:
         yield
     finally:
         context.detach(token)
+
+
+def record_error(span: Span, exception: BaseException | None) -> None:
+    """Records the exception that stopped a setup or a teardown on its span,
+    and gives the span the error status.
+
+    An exception that skips the test, or that says the test is expected to
+    fail, is not an error."""
+    if exception is None or isinstance(
+        exception, pytest.skip.Exception | pytest.xfail.Exception
+    ):
+        return
+    span.record_exception(exception)
+    span.set_status(
+        Status(StatusCode.ERROR, f"{type(exception).__name__}: {exception}")
+    )
 
 
 class ItemSpans:
@@ -144,14 +160,16 @@ class ItemSpans:
             yield
 
     @contextmanager
-    def tearing_down(self) -> Generator[None, None, None]:
+    def tearing_down(self) -> Generator[Span, None, None]:
+        """Gives the test's teardown span, which stays open after its time has
+        ended, for pytest to report an error on."""
+        span = self._tracer.start_span(
+            f"{self._name}::teardown", attributes=self._attributes
+        )
         with self._teardown:
-            self._teardown.enter_context(
-                self._tracer.start_as_current_span(
-                    f"{self._name}::teardown", attributes=self._attributes
-                )
-            )
-            yield
+            self._teardown.enter_context(use_context(trace.set_span_in_context(span)))
+            yield span
+        span.end(self._ended_at)
 
     def start_deferred(self) -> None:
         """Starts the spans that have yet to start, because the test's own work
@@ -186,9 +204,9 @@ class ItemSpans:
         item.addfinalizer(self.end_teardown)
 
     def end_teardown(self) -> None:
-        """Ends the test's teardown span, because what pytest tears down from
-        now on outlived the test.  The test's span ends at this time too, and
-        stays open for pytest to report on the test.
+        """Ends the time of the test's teardown span, because what pytest tears
+        down from now on outlived the test.  The test's span ends at this time
+        too.  Both spans stay open for pytest to report on the test.
 
         The parent of the tests is current from here to the end of the
         teardown.  When a test stopped the whole run with pytest.exit() or

@@ -11,11 +11,11 @@ from opentelemetry.semconv._incubating.attributes.code_attributes import (  # py
     CODE_FUNCTION,
     CODE_LINENO,
 )
-from opentelemetry.trace import Span, Status, StatusCode, Tracer
+from opentelemetry.trace import Tracer
 from pluggy import Result
 
 from .attributes import Attributes, parameter_attribute
-from .items import ItemSpans
+from .items import ItemSpans, record_error
 
 # Stands for the parameter of a fixture that has none, because None can be a
 # fixture's parameter.
@@ -68,6 +68,9 @@ def trace_fixture(
         item_spans.start_deferred()
     with tracer.start_as_current_span(f"{name} setup", attributes=attributes) as span:
         outcome = yield
+        # pytest reports the error against the test that asked for the
+        # fixture.  The span of a shared fixture is not inside that test, so
+        # it has to show the error itself.
         record_error(span, outcome.exception)
     item_spans.postpone()
 
@@ -105,21 +108,3 @@ def code_from_fixturedef(fixturedef: FixtureDef[Any]) -> CodeType | None:
         if code := getattr(candidate, "__code__", None):
             return code
     return None
-
-
-def record_error(span: Span, exception: BaseException | None) -> None:
-    """Records the exception that stopped a fixture's setup on the fixture's
-    span.
-
-    pytest reports the error against the test that asked for the fixture.  The
-    span of a fixture of a wider scope is not inside that test, so it has to
-    show the error itself.  A fixture that skips the test, or that expects it
-    to fail, has not failed."""
-    if exception is None or isinstance(
-        exception, pytest.skip.Exception | pytest.xfail.Exception
-    ):
-        return
-    span.record_exception(exception)
-    span.set_status(
-        Status(StatusCode.ERROR, f"{type(exception).__name__}: {exception}")
-    )
