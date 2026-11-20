@@ -1,25 +1,23 @@
 import os
-from collections.abc import Iterator
-from types import CodeType
+from collections.abc import Generator, Iterator
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
 import pytest
 from _pytest.config import Config
-from _pytest.fixtures import FixtureDef, FixtureRequest, SubRequest
+from _pytest.fixtures import FixtureDef, SubRequest
 from _pytest.main import Session
 from _pytest.nodes import Item, Node
 from _pytest.reports import CollectReport, TestReport
 from _pytest.runner import CallInfo
-from opentelemetry import propagate, trace
+from opentelemetry import context, propagate, trace
 from opentelemetry.context.context import Context
-from opentelemetry.semconv._incubating.attributes.code_attributes import (  # pyright: ignore[reportMissingTypeStubs]
-    CODE_FILEPATH,
-    CODE_FUNCTION,
-    CODE_LINENO,
-)
 from opentelemetry.semconv.attributes.exception_attributes import EXCEPTION_STACKTRACE
 from opentelemetry.trace import Span, Status, StatusCode, Tracer
+from pluggy import Result
 
+from .fixtures import trace_fixture
+from .items import ItemSpans, use_context
 from .provider import build_tracer_provider
 
 if TYPE_CHECKING:
@@ -29,40 +27,21 @@ if TYPE_CHECKING:
 
 tracer: Tracer = trace.get_tracer("pytest-opentelemetry")
 
-# The longest a parameter's value may be in a span attribute, in characters.
-MAX_PARAMETER_LENGTH = 120
-
-
-def parameter_attribute(value: object) -> str | bool | int | float:
-    """Gives a test parameter's value as a span attribute.
-
-    OpenTelemetry takes only strings, booleans, and numbers as attribute
-    values, so any other value becomes its `repr()`.  A string longer than
-    `MAX_PARAMETER_LENGTH` keeps its start and its end, with an ellipsis in
-    place of the middle."""
-    if isinstance(value, bool | int | float):
-        return value
-    text = value if isinstance(value, str) else repr(value)
-    if len(text) <= MAX_PARAMETER_LENGTH:
-        return text
-    head = MAX_PARAMETER_LENGTH // 2
-    tail = MAX_PARAMETER_LENGTH - head - 1
-    return f"{text[:head]}…{text[-tail:]}"
-
 
 def use_real_time_under_freezegun() -> None:
-    """Tells freezegun, when it is installed, to give OpenTelemetry the real time.
+    """Tells freezegun, when it is installed, to give OpenTelemetry and this
+    plugin the real time.
 
-    freezegun replaces the clock that OpenTelemetry reads for a span's start and
-    end.  A span that starts before a test freezes time and ends while time is
-    frozen gets a negative duration, and a span that both starts and ends in
-    frozen time gets a duration of zero."""
+    freezegun replaces the clock that both read for a span's start and end.  A
+    span that starts before a test freezes time and ends while time is frozen
+    gets a negative duration, and a span that both starts and ends in frozen
+    time gets a duration of zero."""
     try:
         import freezegun
     except ImportError:
         return
 
-    freezegun.configure(extend_ignore_list=["opentelemetry"])
+    freezegun.configure(extend_ignore_list=["opentelemetry", "pytest_opentelemetry"])
 
 
 class PerTestOpenTelemetryPlugin:
@@ -70,13 +49,22 @@ class PerTestOpenTelemetryPlugin:
 
     trace_parent: Context | None = None
 
-    # The span for the fixture that pytest tears down next, while a test's
-    # teardown is running.
-    _fixture_teardown_span: Span | None = None
+    def __init__(self) -> None:
+        self._item_spans = ItemSpans(tracer)
 
     @property
     def item_parent(self) -> Context | None:
         return self.trace_parent
+
+    @contextmanager
+    def outside_tests(self) -> Generator[None, None, None]:
+        """Makes the parent of the test spans current, for what pytest does
+        that is not a part of one test."""
+        parent = self.item_parent
+        if parent is None:
+            parent = context.get_current()
+        with use_context(parent):
+            yield
 
     @classmethod
     def get_trace_parent(cls, config: Config) -> Context | None:
@@ -107,164 +95,42 @@ class PerTestOpenTelemetryPlugin:
 
         trace.set_tracer_provider(build_tracer_provider(config))
 
-    def pytest_sessionfinish(self, session: Session) -> None:
+    @pytest.hookimpl(hookwrapper=True)
+    def pytest_sessionfinish(self, session: Session) -> Iterator[None]:
+        # When a run stops before its last test, as it does with -x, pytest
+        # tears down here the fixtures that are still set up.
+        with self.outside_tests():
+            yield
+        self.end_run()
+
+    def end_run(self) -> None:
         self.try_force_flush()
-
-    def _attributes_from_item(self, item: Item) -> dict[str, str | bool | int | float]:
-        filepath, line_number, _ = item.location
-        attributes: dict[str, str | bool | int | float] = {
-            CODE_FILEPATH: filepath,
-            CODE_FUNCTION: item.name,
-            "pytest.nodeid": item.nodeid,
-            "pytest.span_type": "test",
-        }
-        # In some cases like tavern, line_number can be 0
-        if line_number:
-            attributes[CODE_LINENO] = line_number
-        for name, value in self._parameters_from_item(item).items():
-            attributes[f"pytest.param.{name}"] = parameter_attribute(value)
-        return attributes
-
-    @staticmethod
-    def _parameters_from_item(item: Item) -> dict[str, object]:
-        """Finds the values that a test was parametrized with.
-
-        pytest keeps them in the `callspec` of a parametrized function, both
-        from `@pytest.mark.parametrize` and from a fixture's `params`, and
-        tavern keeps them in `parametrize_vars` on its YAML tests."""
-        parameters: dict[str, object] = {}
-        if callspec := getattr(item, "callspec", None):
-            parameters.update(callspec.params)
-        parameters.update(getattr(item, "parametrize_vars", {}))
-        return parameters
 
     @pytest.hookimpl(hookwrapper=True)
     def pytest_runtest_protocol(self, item: Item) -> Iterator[None]:
-        with tracer.start_as_current_span(
-            item.nodeid,
-            attributes=self._attributes_from_item(item),
-            context=self.item_parent,
-        ):
+        with self.outside_tests(), self._item_spans.running(item):
             yield
 
     @pytest.hookimpl(hookwrapper=True)
     def pytest_runtest_setup(self, item: Item) -> Iterator[None]:
-        with tracer.start_as_current_span(
-            f"{item.nodeid}::setup",
-            attributes=self._attributes_from_item(item),
-        ):
+        with self._item_spans.setting_up():
             yield
-
-    def _attributes_from_fixturedef(
-        self, fixturedef: FixtureDef[Any]
-    ) -> dict[str, str | int]:
-        attributes: dict[str, str | int] = {
-            CODE_FUNCTION: fixturedef.argname,
-            "pytest.fixture_scope": fixturedef.scope,
-            "pytest.span_type": "fixture",
-        }
-        if code := self._code_from_fixturedef(fixturedef):
-            attributes[CODE_FILEPATH] = code.co_filename
-            attributes[CODE_LINENO] = code.co_firstlineno
-        return attributes
-
-    @staticmethod
-    def _code_from_fixturedef(fixturedef: FixtureDef[Any]) -> CodeType | None:
-        """Finds the Python code that a fixture runs, when there is any.
-
-        pytest accepts any callable as a fixture.  A function has its own code,
-        an instance of a class with a `__call__` method has that method's code,
-        and a callable implemented in C has none."""
-        for candidate in (fixturedef.func, type(fixturedef.func).__call__):
-            if code := getattr(candidate, "__code__", None):
-                return code
-        return None
-
-    def _name_from_fixturedef(
-        self, fixturedef: FixtureDef[Any], request: FixtureRequest
-    ) -> str:
-        if fixturedef.params and "request" in fixturedef.argnames:
-            try:
-                parameter = str(request.param)
-            except Exception:
-                parameter = str(
-                    request.param_index if isinstance(request, SubRequest) else "?"
-                )
-            return f"{fixturedef.argname}[{parameter}]"
-        return fixturedef.argname
 
     @pytest.hookimpl(hookwrapper=True)
     def pytest_fixture_setup(
-        self, fixturedef: FixtureDef[Any], request: FixtureRequest
-    ) -> Iterator[None]:
-        with tracer.start_as_current_span(
-            name=f"{self._name_from_fixturedef(fixturedef, request)} setup",
-            attributes=self._attributes_from_fixturedef(fixturedef),
-        ):
-            yield
+        self, fixturedef: FixtureDef[Any], request: SubRequest
+    ) -> Generator[None, Result[object], None]:
+        yield from trace_fixture(tracer, self._item_spans, fixturedef, request)
 
     @pytest.hookimpl(hookwrapper=True)
     def pytest_runtest_call(self, item: Item) -> Iterator[None]:
-        with tracer.start_as_current_span(
-            name=f"{item.nodeid}::call",
-            attributes=self._attributes_from_item(item),
-        ):
+        with self._item_spans.calling():
             yield
 
     @pytest.hookimpl(hookwrapper=True)
     def pytest_runtest_teardown(self, item: Item) -> Iterator[None]:
-        with tracer.start_as_current_span(
-            name=f"{item.nodeid}::teardown",
-            attributes=self._attributes_from_item(item),
-        ):
-            # Since there is no pytest_fixture_teardown hook, we have to be a
-            # little clever to capture the spans for each fixture's teardown.
-            # The pytest_fixture_post_finalizer hook is called at the end of a
-            # fixture's teardown, but we don't know when the fixture actually
-            # began tearing down.
-            #
-            # Instead start a span here for the first fixture to be torn down,
-            # but give it a temporary name, since we don't know which fixture it
-            # will be. Then, in pytest_fixture_post_finalizer, when we do know
-            # which fixture is being torn down, update the name and attributes
-            # to the actual fixture, end the span, and create the span for the
-            # next fixture in line to be torn down.
-            self._fixture_teardown_span = tracer.start_span("fixture teardown")
+        with self._item_spans.tearing_down():
             yield
-
-        # The last call to pytest_fixture_post_finalizer will create
-        # a span that is unneeded, so drop it.
-        self._fixture_teardown_span = None
-
-    @pytest.hookimpl(hookwrapper=True)
-    def pytest_fixture_post_finalizer(
-        self, fixturedef: FixtureDef[Any], request: SubRequest
-    ) -> Iterator[None]:
-        """When the span for a fixture teardown is created by
-        pytest_runtest_teardown or a previous pytest_fixture_post_finalizer, we
-        need to update the name and attributes now that we know which fixture it
-        was for."""
-
-        # If the fixture has already been torn down, then it will have no cached
-        # result, so we can skip this one. pytest 9 tears fixtures down before
-        # this hook, so only earlier pytests reach this branch.
-        if (
-            fixturedef.cached_result is None
-            or (span := self._fixture_teardown_span) is None
-        ):  # pragma: no cover
-            yield
-        else:
-            # If we've gotten here, we have a real fixture about to be torn down.
-            name = f"{self._name_from_fixturedef(fixturedef, request)} teardown"
-            span.update_name(name)
-            span.set_attributes(self._attributes_from_fixturedef(fixturedef))
-            yield
-            span.end()
-
-        # Create the span for the next fixture to be torn down. When there are
-        # no more fixtures remaining, this will be an empty, useless span, so it
-        # needs to be dropped by pytest_runtest_teardown.
-        self._fixture_teardown_span = tracer.start_span("fixture teardown")
 
     @staticmethod
     def pytest_exception_interact(
@@ -350,13 +216,13 @@ class OpenTelemetryPlugin(PerTestOpenTelemetryPlugin):
         ):
             yield
 
-    def pytest_sessionfinish(self, session: Session) -> None:
+    def end_run(self) -> None:
         self.session_span.set_status(
             StatusCode.ERROR if self.has_error else StatusCode.OK
         )
 
         self.session_span.end()
-        super().pytest_sessionfinish(session)
+        super().end_run()
 
     def pytest_collectreport(self, report: CollectReport) -> None:
         self.has_error |= report.failed

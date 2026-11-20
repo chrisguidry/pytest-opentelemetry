@@ -1,3 +1,4 @@
+import pytest
 from _pytest.pytester import Pytester
 
 from . import SpanRecorder
@@ -23,8 +24,7 @@ def test_parametrize_arguments_become_attributes(
     pytester.runpytest().assert_outcomes(passed=1)
 
     spans = span_recorder.spans_by_name()
-    nodeid = "test_parametrize_arguments_become_attributes.py::test_one"
-    node = f"{nodeid}[bearer -7-0.5-True-thing0]"
+    node = "test_parametrize_arguments_become_attributes.py::test_one"
     for name in (node, f"{node}::setup", f"{node}::call", f"{node}::teardown"):
         attributes = spans[name].attributes
         assert attributes
@@ -67,8 +67,8 @@ def test_indirect_parameters_become_attributes(
     """)
     pytester.runpytest().assert_outcomes(passed=2)
 
-    spans = span_recorder.spans_by_name()
     nodeid = "test_indirect_parameters_become_attributes.py::test_one"
+    spans = span_recorder.spans_by_nodeid(nodeid)
     for color in ("red", "blue"):
         attributes = spans[f"{nodeid}[{color}]"].attributes
         assert attributes
@@ -93,7 +93,7 @@ def test_long_values_are_truncated_in_the_middle(
 
     spans = span_recorder.spans_by_name()
     attributes = spans[
-        "test_long_values_are_truncated_in_the_middle.py::test_one[long]"
+        "test_long_values_are_truncated_in_the_middle.py::test_one"
     ].attributes
     assert attributes
 
@@ -141,3 +141,94 @@ def test_tavern_parameters_become_attributes(
     assert attributes
     assert attributes["pytest.param.user"] == "alice"
     assert attributes["pytest.param.status"] == 200
+
+
+def test_parametrize_arguments_have_no_fixture_spans(
+    pytester: Pytester, span_recorder: SpanRecorder
+) -> None:
+    # pytest gives each argument of a parametrized test to the test through a
+    # fixture of its own, which only returns the argument.
+    pytester.makepyfile("""
+        import pytest
+
+        @pytest.fixture
+        def real():
+            pass
+
+        @pytest.mark.parametrize('header', ['bearer '])
+        def test_one(header, real):
+            pass
+    """)
+    pytester.runpytest().assert_outcomes(passed=1)
+
+    spans = span_recorder.spans_by_name()
+    assert "real setup" in spans
+    assert "real teardown" in spans
+    assert "header setup" not in spans
+    assert "header teardown" not in spans
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        pytest.param(
+            """
+            import pytest
+
+            @pytest.fixture(params=[111, 222])
+            def number(request):
+                return request.param
+
+            def test_one(number):
+                pass
+            """,
+            id="params-of-the-fixture",
+        ),
+        pytest.param(
+            """
+            import pytest
+
+            @pytest.fixture
+            def number(request):
+                return request.param
+
+            @pytest.mark.parametrize('number', [111, 222], indirect=True)
+            def test_one(number):
+                pass
+            """,
+            id="indirect-parameters-of-the-test",
+        ),
+    ],
+)
+@pytest.mark.parametrize("name", ["number setup", "number teardown"])
+def test_fixture_parameters_become_attributes(
+    pytester: Pytester, span_recorder: SpanRecorder, source: str, name: str
+) -> None:
+    pytester.makepyfile(source)
+    pytester.runpytest().assert_outcomes(passed=2)
+
+    spans = span_recorder.spans_named(name)
+    numbers = [(span.attributes or {})["pytest.param.number"] for span in spans]
+    assert len(numbers) == 2
+    assert 111 in numbers
+    assert 222 in numbers
+
+
+def test_unparametrized_fixtures_have_no_parameter_attributes(
+    pytester: Pytester, span_recorder: SpanRecorder
+) -> None:
+    pytester.makepyfile("""
+        import pytest
+
+        @pytest.fixture
+        def plain():
+            pass
+
+        def test_one(plain):
+            pass
+    """)
+    pytester.runpytest().assert_outcomes(passed=1)
+
+    attributes = span_recorder.spans_by_name()["plain setup"].attributes
+    assert attributes
+    assert not [key for key in attributes if key.startswith("pytest.param.")]
