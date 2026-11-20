@@ -827,7 +827,7 @@ requires-dist = [
     { name = "opentelemetry-exporter-otlp-proto-grpc" },
     { name = "opentelemetry-sdk" },
     { name = "opentelemetry-semantic-conventions" },
-    { name = "pytest" },
+    { name = "pytest", specifier = ">=8.0.0" },
 ]
 provides-extras = ["container"]
 
