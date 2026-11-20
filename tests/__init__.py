@@ -17,6 +17,18 @@ class SpanRecorder(InMemorySpanExporter):
         """Returns a dictionary of remembered spans keyed by their names"""
         return {s.name: s for s in self.finished_spans()}
 
+    def spans_named(self, name: str) -> list[ReadableSpan]:
+        """Returns the remembered spans that share a name"""
+        return [s for s in self.finished_spans() if s.name == name]
+
+    def spans_by_nodeid(self, name: str) -> dict[str, ReadableSpan]:
+        """Returns the remembered spans that share a name, keyed by the
+        pytest.nodeid of each.  The spans of a parametrized test share a name."""
+        return {
+            str((s.attributes or {})["pytest.nodeid"]): s
+            for s in self.spans_named(name)
+        }
+
 
 def span_id(span: ReadableSpan) -> int:
     assert span.context

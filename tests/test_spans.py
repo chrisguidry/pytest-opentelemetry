@@ -1,7 +1,8 @@
+import pytest
 from _pytest.pytester import Pytester
 from opentelemetry.trace import SpanKind
 
-from . import SpanRecorder, parent_id, span_id, trace_id
+from . import SpanRecorder, parent_id, span_id, start_time, trace_id
 
 
 def test_simple_pytest_functions(
@@ -176,31 +177,42 @@ def test_parametrized_tests(pytester: Pytester, span_recorder: SpanRecorder) -> 
     """)
     pytester.runpytest().assert_outcomes(passed=3)
 
-    spans = span_recorder.spans_by_name()
-    # assert len(spans) == 3 + 1
+    assert "test run" in span_recorder.spans_by_name()
 
-    assert "test run" in spans
+    spans = span_recorder.spans_by_nodeid("test_parametrized_tests.py::test_one")
+    assert set(spans) == {
+        "test_parametrized_tests.py::test_one[world]",
+        "test_parametrized_tests.py::test_one[people]",
+    }
+    assert all(span.status.is_ok for span in spans.values())
 
-    span = spans["test_parametrized_tests.py::test_one[world]"]
-    assert span.status.is_ok
-    assert span.attributes
-    assert (
-        span.attributes["pytest.nodeid"]
-        == "test_parametrized_tests.py::test_one[world]"
-    )
-
-    span = spans["test_parametrized_tests.py::test_one[people]"]
-    assert span.status.is_ok
-    assert span.attributes
-    assert (
-        span.attributes["pytest.nodeid"]
-        == "test_parametrized_tests.py::test_one[people]"
-    )
-
-    span = spans["test_parametrized_tests.py::test_two"]
+    span = span_recorder.spans_by_name()["test_parametrized_tests.py::test_two"]
     assert span.status.is_ok
     assert span.attributes
     assert span.attributes["pytest.nodeid"] == "test_parametrized_tests.py::test_two"
+
+
+@pytest.mark.parametrize("phase", ["", "::setup", "::call", "::teardown"])
+def test_parametrized_tests_share_a_span_name(
+    pytester: Pytester, span_recorder: SpanRecorder, phase: str
+) -> None:
+    pytester.makepyfile("""
+        import pytest
+
+        class TestThings:
+            @pytest.mark.parametrize('hello', ['world', 'people'])
+            def test_one(self, hello):
+                assert 1 + 2 == 3
+    """)
+    pytester.runpytest().assert_outcomes(passed=2)
+
+    nodeid = "test_parametrized_tests_share_a_span_name.py::TestThings::test_one"
+    spans = span_recorder.spans_by_nodeid(f"{nodeid}{phase}")
+    assert set(spans) == {f"{nodeid}[world]", f"{nodeid}[people]"}
+    assert [(span.attributes or {})["code.function"] for span in spans.values()] == [
+        "test_one",
+        "test_one",
+    ]
 
 
 def test_class_tests(pytester: Pytester, span_recorder: SpanRecorder) -> None:
@@ -293,3 +305,65 @@ def test_spans_within_tests_are_children_of_test_spans(
 
     assert inner.parent
     assert parent_id(inner) == span_id(test_call)
+
+
+def test_test_that_another_plugin_runs_twice(
+    pytester: Pytester, span_recorder: SpanRecorder
+) -> None:
+    # pytest-rerunfailures runs a test again inside one pytest_runtest_protocol.
+    pytester.makeconftest("""
+        from _pytest.runner import runtestprotocol
+
+        def pytest_runtest_protocol(item, nextitem):
+            runtestprotocol(item, nextitem=nextitem, log=False)
+            runtestprotocol(item, nextitem=nextitem)
+            return True
+    """)
+    pytester.makepyfile("""
+        import pytest
+
+        @pytest.fixture
+        def thing():
+            yield
+
+        def test_one(thing):
+            pass
+    """)
+    pytester.runpytest().assert_outcomes(passed=1)
+
+    node = "test_test_that_another_plugin_runs_twice.py::test_one"
+    (test,) = span_recorder.spans_named(node)
+
+    for phase in ("setup", "call", "teardown"):
+        first, second = span_recorder.spans_named(f"{node}::{phase}")
+        assert parent_id(first) == span_id(test)
+        assert parent_id(second) == span_id(test)
+
+    setups = span_recorder.spans_named(f"{node}::setup")
+    fixtures = span_recorder.spans_named("thing setup")
+    assert len(fixtures) == 2
+    assert {parent_id(fixture) for fixture in fixtures} == {
+        span_id(setup) for setup in setups
+    }
+
+
+def test_test_span_covers_the_setup_hooks_of_other_plugins(
+    pytester: Pytester, span_recorder: SpanRecorder
+) -> None:
+    pytester.makeconftest("""
+        from opentelemetry import trace
+
+        def pytest_runtest_setup(item):
+            with trace.get_tracer('inside').start_as_current_span('in a hook'):
+                pass
+    """)
+    pytester.makepyfile("""
+        def test_one():
+            pass
+    """)
+    pytester.runpytest().assert_outcomes(passed=1)
+
+    spans = span_recorder.spans_by_name()
+    node = "test_test_span_covers_the_setup_hooks_of_other_plugins.py::test_one"
+    assert start_time(spans[node]) <= start_time(spans["in a hook"])
+    assert start_time(spans[f"{node}::setup"]) <= start_time(spans["in a hook"])

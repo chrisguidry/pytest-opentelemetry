@@ -24,15 +24,15 @@ classifiers = [
     "Framework :: Pytest",
 ]
 dependencies = [
-    "opentelemetry-api",
-    "opentelemetry-exporter-otlp-proto-grpc",
-    "opentelemetry-sdk",
-    "opentelemetry-semantic-conventions",
-    "pytest",
+    "opentelemetry-api>=1.28.0",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.28.0",
+    "opentelemetry-sdk>=1.28.0",
+    "opentelemetry-semantic-conventions>=0.49b0",
+    "pytest>=8.0.0",
 ]
 
 [project.optional-dependencies]
-container = ["opentelemetry-container-distro"]
+container = ["opentelemetry-container-distro>=0.1.0"]
 
 [dependency-groups]
 dev = [
@@ -44,7 +44,6 @@ dev = [
     "pyright>=1.1.408",
     "pytest-cov>=6.0.0",
     "pytest-xdist>=3.6.0",
-    "pytest>=9.0.2",
 ]
 
 [project.urls]

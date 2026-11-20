@@ -814,7 +814,6 @@ dev = [
     { name = "loq" },
     { name = "prek" },
     { name = "pyright" },
-    { name = "pytest" },
     { name = "pytest-cov" },
     { name = "pytest-opentelemetry", extra = ["container"] },
     { name = "pytest-xdist" },
@@ -822,12 +821,12 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "opentelemetry-api" },
-    { name = "opentelemetry-container-distro", marker = "extra == 'container'" },
-    { name = "opentelemetry-exporter-otlp-proto-grpc" },
-    { name = "opentelemetry-sdk" },
-    { name = "opentelemetry-semantic-conventions" },
-    { name = "pytest" },
+    { name = "opentelemetry-api", specifier = ">=1.28.0" },
+    { name = "opentelemetry-container-distro", marker = "extra == 'container'", specifier = ">=0.1.0" },
+    { name = "opentelemetry-exporter-otlp-proto-grpc", specifier = ">=1.28.0" },
+    { name = "opentelemetry-sdk", specifier = ">=1.28.0" },
+    { name = "opentelemetry-semantic-conventions", specifier = ">=0.49b0" },
+    { name = "pytest", specifier = ">=8.0.0" },
 ]
 provides-extras = ["container"]
 
@@ -838,7 +837,6 @@ dev = [
     { name = "loq", specifier = ">=0.1.0a3" },
     { name = "prek", specifier = ">=0.3.1" },
     { name = "pyright", specifier = ">=1.1.408" },
-    { name = "pytest", specifier = ">=9.0.2" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
     { name = "pytest-opentelemetry", extras = ["container"] },
     { name = "pytest-xdist", specifier = ">=3.6.0" },

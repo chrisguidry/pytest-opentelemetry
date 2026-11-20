@@ -43,6 +43,36 @@ def test_spans_keep_real_time_while_time_is_frozen(
     )
 
 
+def test_tests_start_and_end_at_the_real_time_while_time_is_frozen(
+    pytester: Pytester, span_recorder: SpanRecorder
+) -> None:
+    pytester.makepyfile("""
+        import pytest
+        from freezegun import freeze_time
+
+        @pytest.fixture(scope='module')
+        def frozen():
+            with freeze_time('2012-01-14'):
+                yield
+
+        def test_one(frozen):
+            pass
+    """)
+    pytester.runpytest().assert_outcomes(passed=1)
+
+    spans = span_recorder.spans_by_name()
+    test = spans[
+        "test_tests_start_and_end_at_the_real_time_while_time_is_frozen.py::test_one"
+    ]
+    in_order = [
+        end_time(spans["frozen setup"]),
+        start_time(test),
+        end_time(test),
+        start_time(spans["frozen teardown"]),
+    ]
+    assert in_order == sorted(in_order)
+
+
 def test_freezegun_is_optional(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setitem(sys.modules, "freezegun", None)
     use_real_time_under_freezegun()
