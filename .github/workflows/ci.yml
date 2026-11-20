@@ -37,6 +37,33 @@ jobs:
       - name: Run tests
         run: uv run pytest
 
+  # The lower bounds in pyproject.toml are claims about what the plugin works
+  # with, and this job is what keeps them true.
+  lowest-dependencies:
+    name: Lowest dependencies
+    runs-on: ubuntu-26.04
+    timeout-minutes: 4
+    env:
+      UV_RESOLUTION: lowest-direct
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Install uv and set Python version
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: "3.11"
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run tests
+        run: uv run pytest
+
   prek:
     name: Prek checks
     runs-on: ubuntu-26.04
@@ -65,7 +92,7 @@ jobs:
   all-checks-passed:
     name: All checks passed
     if: ${{ always() }}
-    needs: [test, prek]
+    needs: [test, lowest-dependencies, prek]
     runs-on: ubuntu-26.04
     timeout-minutes: 1
     steps:

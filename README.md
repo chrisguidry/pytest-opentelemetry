@@ -33,6 +33,9 @@ into the layers of your stack, like database queries and network requests.
 pip install pytest-opentelemetry
 ```
 
+`pytest-opentelemetry` needs Python 3.11 or later, pytest 8.0.0 or later, and version
+1.28.0 or later of the OpenTelemetry API and SDK.
+
 Installing a library that exposes a specific pytest-related entry point is automatically
 loaded as a pytest plugin.  Simply installing the plugin should be enough to register
 it for pytest.
