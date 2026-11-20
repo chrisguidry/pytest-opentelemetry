@@ -100,6 +100,14 @@ nest this run under that parent:
 pytest ... --trace-parent 00-1234567890abcdef1234567890abcdef-fedcba0987654321-01
 ```
 
+## Parametrized tests
+
+The spans of a parametrized test carry each of its parameters as an attribute named
+`pytest.param.<name>`, from `@pytest.mark.parametrize`, a fixture's `params`, or a
+[tavern](https://pypi.org/project/tavern/) test's `parametrize` mark.  A string, a
+boolean, or a number keeps its value, and any other value becomes its `repr()`.  A value
+longer than 120 characters keeps its start and its end, with `…` in place of the middle.
+
 ## Working with other plugins
 
 `pytest-opentelemetry` registers the object that creates its spans under the name
